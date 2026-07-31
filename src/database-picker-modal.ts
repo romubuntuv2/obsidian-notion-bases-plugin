@@ -10,10 +10,12 @@ interface DatabaseEntry {
 export class DatabasePickerModal extends FuzzySuggestModal<DatabaseEntry> {
 	private entries: DatabaseEntry[]
 	private onChoose: (file: TFile) => void
+	private showPath: boolean
 
-	constructor(app: App, databases: TFile[], onChoose: (file: TFile) => void) {
+	constructor(app: App, databases: TFile[],  showPath:boolean, onChoose: (file: TFile) => void) {
 		super(app)
 		this.onChoose = onChoose
+		this.showPath = showPath
 		this.setPlaceholder(t('picker_placeholder'))
 
 		this.entries = databases.map(f => {
@@ -21,7 +23,9 @@ export class DatabasePickerModal extends FuzzySuggestModal<DatabaseEntry> {
 			return {
 				file: f,
 				label: isRoot ? t('picker_root') : (f.parent?.name ?? '/'),
-				sublabel: isRoot ? '' : (f.parent?.path ?? '/'),
+				sublabel: this.showPath && !isRoot
+					? (f.parent?.path ?? '/')
+					: '',
 			}
 		})
 	}
