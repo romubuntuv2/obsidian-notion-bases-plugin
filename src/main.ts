@@ -176,7 +176,9 @@ export default class NotionBasesPlugin extends Plugin {
 			return
 		}
 
-		new DatabasePickerModal(this.app, databases, file => {
+		new DatabasePickerModal(this.app, databases, 
+			this.settings.showDatabasePathInPicker,
+			file => {
 			const config = this.manager.readConfig(file)
 			new QuickAddModal(this.app, this.manager, file, config.schema).open()
 		}).open()
@@ -191,7 +193,9 @@ export default class NotionBasesPlugin extends Plugin {
 			return
 		}
 
-		new DatabasePickerModal(this.app, databases, file => {
+		new DatabasePickerModal(this.app, databases, 
+			this.settings.showDatabasePathInPicker,
+			file => {
 			const existingLeaf = this.findDatabaseLeaf(file.path)
 			if (existingLeaf) {
 				void this.app.workspace.revealLeaf(existingLeaf)
