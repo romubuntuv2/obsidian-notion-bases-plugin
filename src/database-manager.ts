@@ -358,8 +358,18 @@ export class DatabaseManager {
 	}
 
 	/** createNote + automatic template resolution based on db config. Opens picker if askTemplateOnCreate is on. */
-	async createNoteWithTemplate(dbFile: TFile, initialFrontmatter?: Record<string, unknown>): Promise<TFile> {
+	async createNoteWithTemplate(dbFile: TFile, initialFrontmatter?: Record<string, unknown>, view?: ViewConfig,): Promise<TFile> {
 		const config = this.readConfig(dbFile)
+				
+		const viewDefaults = view
+			? this.getDefaultFrontmatterFromFilterInView(view, config.schema)
+			: {}
+
+		const mergeFrontmatter = {
+			...viewDefaults,
+			...initialFrontmatter
+		}
+
 		if (config.askTemplateOnCreate) {
 			const templatePath = await new Promise<string | null>(resolve => {
 				new TemplatePickerModal(
@@ -369,14 +379,63 @@ export class DatabaseManager {
 					config.templateFolder ?? null,
 				).open()
 			})
-			return this.createNote(dbFile, initialFrontmatter, templatePath)
+			return this.createNote(dbFile, viewDefaults, templatePath)
 		}
-		return this.createNote(dbFile, initialFrontmatter, config.templatePath ?? null)
+		return this.createNote(dbFile, mergeFrontmatter, config.templatePath ?? null)
 	}
 
 	private folderOf(path: string): string | null {
 		const idx = path.lastIndexOf('/')
 		return idx > 0 ? path.slice(0, idx) : null
+	}
+
+
+	private getDefaultFrontmatterFromFilterInView(
+		view: ViewConfig | undefined,
+		schema: ColumnSchema[],
+	): Record<string, unknown> {
+		if (!view?.activePills || view.activePills.length === 0) {
+			return {}
+		}
+
+		const defaults: Record<string, unknown> = {}
+
+		for (const pill of view.activePills) {
+			const column = schema.find(c => c.id === pill.columnId)
+
+			if (!column) continue
+
+			switch (pill.operator) {
+			case 'is':
+				switch (column.type) {
+				case 'checkbox':
+					defaults[column.id] = pill.value === 'true'
+					break
+
+				case 'number':
+					defaults[column.id] = Number(pill.value)
+					break
+
+				case 'multiselect':
+					defaults[column.id] = [pill.value]
+					break
+
+				default:
+					defaults[column.id] = pill.value
+				}
+				break
+
+			case 'is_checked':
+				defaults[column.id] = true
+				break
+
+			case 'is_unchecked':
+				defaults[column.id] = false
+				break
+			}
+		}
+
+		return defaults
 	}
 
 	/**

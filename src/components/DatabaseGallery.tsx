@@ -306,7 +306,7 @@ export function DatabaseGallery({ dbFile, manager, externalView, onViewChange }:
 		await saveView({ ...activeView, sorts: newSorts })
 	}, [activeView, saveView])
 
-	const handleAddRow = async () => { if (dbFile) await manager.createNoteWithTemplate(dbFile) }
+	const handleAddRow = async () => { if (dbFile) await manager.createNoteWithTemplate(dbFile, undefined, externalView) }
 
 	// ── Render ───────────────────────────────────────────────────────────────
 

@@ -1229,14 +1229,14 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 
 	const handleAddRow = async () => {
 		if (!dbFile) return
-		const newFile = await manager.createNoteWithTemplate(dbFile)
+		const newFile = await manager.createNoteWithTemplate(dbFile, undefined, externalView)
 		lastCreatedPath.current = newFile.path
 		// loadData será chamado pelo evento vault.on('create')
 	}
 
 	const handleAddSubRow = useCallback(async (parentTitle: string) => {
 		if (!dbFile || !hierarchyCol) return
-		const newFile = await manager.createNoteWithTemplate(dbFile, { [hierarchyCol.id]: [parentTitle] })
+		const newFile = await manager.createNoteWithTemplate(dbFile, { [hierarchyCol.id]: [parentTitle] }, externalView)
 		lastCreatedPath.current = newFile.path
 	}, [dbFile, hierarchyCol, manager])
 
