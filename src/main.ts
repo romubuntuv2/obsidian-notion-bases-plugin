@@ -60,6 +60,14 @@ export default class NotionBasesPlugin extends Plugin {
 			},
 		})
 
+		this.addCommand({
+			id:'select-database',
+			name: "Select Database", // to put to the translator,
+			callback:()=> {
+				this.openDatabasePicker()
+			}
+		})
+
 		// Interceptar abertura de _database.md no explorador de arquivos.
 		//
 		// Usamos active-leaf-change em vez de file-open porque file-open
