@@ -21,6 +21,7 @@ import { SaveIndicator } from './SaveIndicator'
 import { ConditionalFormatPanel } from './ConditionalFormatPanel'
 import { useSaveTracker } from '../hooks/useSaveTracker'
 import { stringifyScalar } from '../value-utils'
+import EditableTitle from './EditableTitle'
 
 interface DatabaseBoardProps {
 	dbFile: TFile | null
@@ -73,7 +74,8 @@ interface BoardCardProps {
 	isMobile: boolean
 	visibleCols: ColumnSchema[]
 	dbFolderPath: string
-	includeSubfolders: boolean
+	includeSubfolders: boolean,
+	manager: DatabaseManager,
 	onOpen: (file: TFile) => void
 	onDragStart?: (e: React.DragEvent, filePath: string) => void
 	onTouchStart?: (e: React.TouchEvent, file: TFile) => void
@@ -82,7 +84,7 @@ interface BoardCardProps {
 }
 
 const BoardCard = React.memo(function BoardCard({
-	row, isMobile, visibleCols, dbFolderPath, includeSubfolders,
+	row, isMobile, visibleCols, dbFolderPath, includeSubfolders, manager,
 	onOpen, onDragStart, onTouchStart, onContextMenu, cardStyle,
 }: BoardCardProps) {
 	const fileFolder = row._file.parent?.path ?? ''
@@ -100,9 +102,14 @@ const BoardCard = React.memo(function BoardCard({
 			} : undefined}
 			onTouchStart={isMobile ? e => onTouchStart?.(e, row._file) : undefined}
 			onContextMenu={!isMobile ? e => { e.preventDefault(); onContextMenu?.(e, row._file) } : undefined}
-			onClick={() => onOpen(row._file)}
 		>
-			<div className="nb-board-card-title">{row._title}</div>
+			<EditableTitle
+				title={row._title}
+				file={row._file}
+				onOpen={onOpen}
+				manager={manager}
+				className="nb-board-card-title"
+			/>
 			{relPath ? <div className="nb-folder-path">{relPath}</div> : null}
 			{visibleCols.length > 0 && (
 				<div className="nb-board-card-props">
@@ -861,6 +868,7 @@ export function DatabaseBoard({ dbFile, manager, externalView, onViewChange }: D
 													isMobile={isMobile}
 													visibleCols={visibleCols}
 													dbFolderPath={dbFolderPath}
+													manager={manager}
 													includeSubfolders={activeView.includeSubfolders ?? false}
 													onOpen={openFile}
 													onDragStart={handleCardDragStart}
