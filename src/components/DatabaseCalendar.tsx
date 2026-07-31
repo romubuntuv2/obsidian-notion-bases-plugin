@@ -345,7 +345,7 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 
 	const handleDayClick = async (year: number, month: number, day: number) => {
 		if (!dbFile || !dateField) return
-		const newFile = await manager.createNoteWithTemplate(dbFile)
+		const newFile = await manager.createNoteWithTemplate(dbFile, undefined, externalView)
 		const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 		await trackSave(app.fileManager.processFrontMatter(newFile, (fm: Record<string, unknown>) => { fm[dateField.id] = dateStr }))
 	}

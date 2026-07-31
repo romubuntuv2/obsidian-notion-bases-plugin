@@ -475,7 +475,7 @@ export function DatabaseBoard({ dbFile, manager, externalView, onViewChange }: D
 
 	const addCardToColumn = useCallback(async (columnValue: string) => {
 		if (!dbFile || !groupByCol) return
-		const newFile = await manager.createNoteWithTemplate(dbFile)
+		const newFile = await manager.createNoteWithTemplate(dbFile, undefined, externalView)
 		if (columnValue !== '') {
 			await trackSave(app.fileManager.processFrontMatter(newFile, (fm: Record<string, unknown>) => {
 				fm[groupByCol.id] = columnValue
