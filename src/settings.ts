@@ -10,7 +10,9 @@ export interface NotionBasesSettings {
 	embedViews: Record<string, ViewConfig>
 	readInlineFields: boolean
 	pageSize: number
-	clipEllipsis: boolean
+	clipEllipsis: boolean,
+
+	showDatabasePathInPicker:boolean
 }
 
 export const DEFAULT_SETTINGS: NotionBasesSettings = {
@@ -20,6 +22,8 @@ export const DEFAULT_SETTINGS: NotionBasesSettings = {
 	readInlineFields: false,
 	pageSize: 0,
 	clipEllipsis: true,
+
+	showDatabasePathInPicker:true
 }
 
 export class NotionBasesSettingTab extends PluginSettingTab {
@@ -101,6 +105,20 @@ export class NotionBasesSettingTab extends PluginSettingTab {
 					.onChange(async value => {
 						this.plugin.settings.pageSize = Number(value)
 						this.plugin.manager.pageSize = Number(value)
+						await this.plugin.saveSettings()
+					})
+			)
+
+		new Setting(containerEl)
+			.setName('setting_show_database_path') // ADD TRANSLATION
+			.setDesc('setting_show_database_path_desc') // ADD TRANSLATION
+			.addToggle(toggle =>
+				toggle
+					.setValue(this.plugin.settings.showDatabasePathInPicker)
+					.onChange(async value => {
+
+						this.plugin.settings.showDatabasePathInPicker = value
+
 						await this.plugin.saveSettings()
 					})
 			)
