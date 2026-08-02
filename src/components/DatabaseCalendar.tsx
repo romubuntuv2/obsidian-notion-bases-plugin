@@ -908,13 +908,13 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 					<p>{t('calendar_no_date_field')}</p>
 				</div>
 			) : (
-				<>
+				<div className='nb-cal-view'>
 					{viewMode === 'week' ?  
 						<DatabaseWeekView/>
 						:<DatabaseMonthlyView/>
 					}
 					{noDateRows.length > 0 && <DatabaseNoRowContainer />}
-				</>
+				</div>
 			)}
 
 			{/* Expanded day BottomSheet (mobile) */}

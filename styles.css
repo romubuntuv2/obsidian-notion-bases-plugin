@@ -3415,6 +3415,14 @@
 
 /* ── Calendar Monthly view ───────────────────────────────────────────────────────── */
 
+.nb-cal-view {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	overflow-x: hidden;
+}
+
+
 .nb-cal-monthly-grid {
 	display: grid;
 	grid-template-columns: repeat(7, minmax(0, 1fr));
