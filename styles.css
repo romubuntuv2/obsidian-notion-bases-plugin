@@ -3525,27 +3525,15 @@
 }
 
 .nb-cal-monthly-card {
-
-	background:var(--interactive-accent);
-	color:var(--text-on-accent);
-
-	border-radius:3px;
-
-	padding:2px 5px;
-
-	cursor:pointer;
-
-	font-size:11px;
-	line-height:1.3;
-
-	display:flex;
-	flex-direction:column;
-
-	gap:1px;
-
-	transition:filter .1s;
+	margin-bottom: 0;
+	width: 100%;
 }
 
+.nb-cal-time-badge {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	margin-right: 4px;
+}
 
 .nb-cal-monthly-card:hover {
 	filter:brightness(1.15);

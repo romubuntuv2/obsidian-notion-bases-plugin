@@ -720,10 +720,6 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 	}
 
 	const DatabaseMonthWeek = ({week,weekIndex,}: {week: (number | null)[],weekIndex: number}) => {
-		const heights = useRef<Record<number, number>>({})
-
-
- 
 		return (
 			<div
 				className="nb-cal-monthly-week-row"
@@ -795,41 +791,85 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 		)
 	}
 
-	const DatabaseMonthlyCard = ({row}:{row:NoteRow}) => {
-		return <div
-			key={row._file.path}
-			className="nb-cal-monthly-card"
-			draggable={!isMobile}
-			onDragStart={!isMobile ? e => handleCardDragStart(e, row) : undefined}
-			onClick={(e) => { e.stopPropagation(); void app.workspace.getLeaf().openFile(row._file) }}
-		>
-			<div className=".nb-cal-monthly-card-title-row">
-				{dateField && (() => { const tm = getRowTime(row, dateField.id); return tm ? <span className="nb-cal-time-badge">{tm}</span> : null })()}
-				<span className=".nb-cal-monthly-card-title">{row._title}</span>
-			</div>
-			{!isMobile && (() => {
-				const dbFolder = dbFile?.parent?.path ?? ''
-				const fileFolder = row._file.parent?.path ?? ''
-				const relPath = activeView.includeSubfolders && fileFolder.length > dbFolder.length
-					? fileFolder.slice(dbFolder.length + 1) : ''
-				return relPath ? <div className="nb-folder-path">{relPath}</div> : null
-			})()}
-			{!isMobile && visibleCols.length > 0 && (
-				<div className="nb-cal-card-props">
-					{visibleCols.map(col => {
-						const val = row[col.id]
-						if (val === null || val === undefined || stringifyScalar(val).trim() === '') return null
-						const display = Array.isArray(val) ? (val as string[]).join(', ') : stringifyScalar(val)
-						return (
-							<span key={col.id} className="nb-cal-card-prop">
-								{display}
-							</span>
-						)
-					})}
-				</div>
-			)}
-		</div>
+	const DatabaseMonthlyCard = ({row}:{row: NoteRow}) => {
+		const fileFolder = row._file.parent?.path ?? ''
+		const dbFolder = dbFile?.parent?.path ?? ''
 
+		const relPath = activeView.includeSubfolders && fileFolder.length > dbFolder.length
+			? fileFolder.slice(dbFolder.length + 1)
+			: ''
+
+		return (
+			<div
+				key={row._file.path}
+				className="nb-board-card nb-cal-monthly-card"
+				draggable={!isMobile}
+				onDragStart={!isMobile ? e => {
+					e.stopPropagation()
+					handleCardDragStart(e, row)
+				} : undefined}
+				onClick={(e) => {
+					e.stopPropagation()
+					void app.workspace.getLeaf().openFile(row._file)
+				}}
+			>
+
+				<div className="nb-board-card-title">
+					{dateField && (() => {
+						const tm = getRowTime(row, dateField.id)
+						return tm ? (
+							<span className="nb-cal-time-badge">
+								{tm}
+							</span>
+						) : null
+					})()}
+
+					{row._title}
+				</div>
+
+
+				{relPath && (
+					<div className="nb-folder-path">
+						{relPath}
+					</div>
+				)}
+
+
+				{!isMobile && visibleCols.length > 0 && (
+					<div className="nb-board-card-props">
+						{visibleCols.map(col => {
+							const val = row[col.id]
+
+							if (
+								val === null ||
+								val === undefined ||
+								stringifyScalar(val).trim() === ''
+							) return null
+
+							const display = Array.isArray(val)
+								? (val as string[]).join(', ')
+								: stringifyScalar(val)
+
+							return (
+								<span
+									key={col.id}
+									className="nb-board-card-prop"
+								>
+									<span className="nb-board-card-prop-name">
+										{col.name}:
+									</span>
+
+									<span className="nb-board-card-prop-value">
+										{display}
+									</span>
+								</span>
+							)
+						})}
+					</div>
+				)}
+
+			</div>
+		)
 	}
 
 	const DatabaseNoRowContainer = ()=> {
