@@ -579,6 +579,285 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 		</>
 	)
 
+
+	const DatabaseWeekView = () => {
+		if (!dateField) return <></>
+		return <div className="nb-cal-week-container">
+			{/* All-day row */}
+			<div className="nb-cal-week-allday">
+				<div className="nb-cal-week-time-gutter nb-cal-week-allday-label">{t('calendar_all_day')}</div>
+				{weekDays.map(d => {
+					const key = dateKey(d.getFullYear(), d.getMonth(), d.getDate())
+					const dayRows = (rowsByDate.get(key) ?? []).filter(row => {
+						const p = parseDateValue((row as Record<string, unknown>)[dateField.id])
+						return !p || p.hour === undefined
+					})
+					return (
+						<div
+							key={key}
+							className="nb-cal-week-allday-cell"
+							onClick={() => { void handleDayClick(d.getFullYear(), d.getMonth(), d.getDate()) }}
+							onDragOver={e => handleDayDragOver(e, d.getDate())}
+							onDragLeave={handleDayDragLeave}
+							onDrop={e => { void handleDayDrop(e, d.getFullYear(), d.getMonth(), d.getDate()) }}
+						>
+							{dayRows.map(row => (
+								<div
+									key={row._file.path}
+									className="nb-cal-card nb-cal-card--allday"
+									draggable
+									onDragStart={e => handleCardDragStart(e, row)}
+									onClick={e => { e.stopPropagation(); void app.workspace.getLeaf().openFile(row._file) }}
+								>
+									<span className="nb-cal-card-title">{row._title}</span>
+								</div>
+							))}
+						</div>
+					)
+				})}
+			</div>
+			{/* Day headers */}
+			<div className="nb-cal-week-header">
+				<div className="nb-cal-week-time-gutter" />
+				{weekDays.map(d => {
+					const isToday = d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate()
+					return (
+						<div key={d.toISOString()} className={`nb-cal-week-day-header${isToday ? ' nb-cal-week-day-header--today' : ''}`}>
+							{DAYS_SHORT()[d.getDay()]} {d.getDate()}
+						</div>
+					)
+				})}
+			</div>
+			{/* Time grid */}
+			<div className="nb-cal-week-body" ref={weekBodyRef}>
+				{/* Current time indicator spanning full width */}
+				{weekDays.some(d => d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate()) && (
+					<div
+						className="nb-cal-now-line"
+						style={{ top: `${(nowMinutes / 1440) * 48 * 24}px` }}
+					/>
+				)}
+				<div className="nb-cal-week-time-gutter">
+					{Array.from({ length: 24 }, (_, h) => (
+						<div key={h} className="nb-cal-week-hour-label">
+							{formatTime(h, 0)}
+						</div>
+					))}
+				</div>
+				{weekDays.map(d => {
+					const key = dateKey(d.getFullYear(), d.getMonth(), d.getDate())
+					const isToday = d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate()
+					const timedRows = (rowsByDate.get(key) ?? []).filter(row => {
+						const p = parseDateValue((row as Record<string, unknown>)[dateField.id])
+						return p && p.hour !== undefined
+					})
+					return (
+						<div
+							key={key}
+							className={`nb-cal-week-day-col${isToday ? ' nb-cal-week-day-col--today' : ''}`}
+							onClick={() => { void handleDayClick(d.getFullYear(), d.getMonth(), d.getDate()) }}
+							onDragOver={e => handleDayDragOver(e, d.getDate())}
+							onDragLeave={handleDayDragLeave}
+							onDrop={e => { void handleDayDrop(e, d.getFullYear(), d.getMonth(), d.getDate()) }}
+						>
+							{/* Hour grid lines */}
+							{Array.from({ length: 24 }, (_, h) => (
+								<div key={h} className="nb-cal-week-hour-slot" />
+							))}
+							{/* Positioned timed events */}
+							{timedRows.map(row => {
+								const p = parseDateValue((row as Record<string, unknown>)[dateField.id])
+								if (!p || p.hour === undefined || p.minute === undefined) return null
+								const topPct = ((p.hour * 60 + p.minute) / 1440) * 100
+								return (
+									<div
+										key={row._file.path}
+										className="nb-cal-card nb-cal-card--timed"
+										draggable
+										onDragStart={e => handleCardDragStart(e, row)}
+										onClick={e => { e.stopPropagation(); void app.workspace.getLeaf().openFile(row._file) }}
+										style={{ top: `${topPct}%` }}
+									>
+										<div className="nb-cal-card-title-row">
+											<span className="nb-cal-time-badge">{formatTime(p.hour, p.minute)}</span>
+											<span className="nb-cal-card-title">{row._title}</span>
+										</div>
+									</div>
+								)
+							})}
+						</div>
+					)
+				})}
+			</div>
+		</div>
+	}
+
+	const DatabaseMonthlyView = () => {
+
+		const weeks = []
+		for (let i = 0; i < calendarCells.length; i += 7) {
+			weeks.push(calendarCells.slice(i, i + 7))
+		}
+		return (
+			<div className="nb-cal-monthly-grid">
+				{DAYS_SHORT().map(day => (
+					<div
+						key={day}
+						className="nb-cal-monthly-day-header"
+					>
+						{day}
+					</div>
+				))}
+				{weeks.map((week, index) => (
+					<DatabaseMonthWeek
+						key={index}
+						week={week}
+						weekIndex={index}
+					/>
+				))}
+			</div>
+		)
+	}
+
+	const DatabaseMonthWeek = ({week,weekIndex,}: {week: (number | null)[],weekIndex: number}) => {
+		const heights = useRef<Record<number, number>>({})
+
+
+ 
+		return (
+			<div
+				className="nb-cal-monthly-week-row"
+			>
+				{week.map((day, dayIndex) => (
+					<DatabaseMonthCell
+						key={day ?? `empty-${weekIndex}-${dayIndex}`}
+						day={day}
+					/>
+				))}
+			</div>
+		)
+	}
+
+	const DatabaseMonthCell = ({day}: {day: number | null}) => {
+		if (day === null) {
+			return <div className="nb-cal-monthly-cell nb-cal-monthly-cell--outside" />
+		}
+
+		// RESIZE DETECTION
+		const cellRef = useRef<HTMLDivElement>(null)
+
+
+		const isToday = day === todayDay
+		const isDragOver = day === dragOverDay
+		const dayRows  = rowsByDate.get(dateKey(currentYear, currentMonth, day)) ?? []
+		const mobileMax = 1
+		const showRows = isMobile && dayRows.length > mobileMax
+				? dayRows.slice(0, mobileMax)
+				: dayRows
+
+		const extraCount = isMobile
+				? dayRows.length - showRows.length
+				: 0
+
+		const dayKey =dateKey(currentYear, currentMonth, day)
+
+		return (
+			<div
+				className={`nb-cal-monthly-cell${isToday ? ' nb-cal-monthly-cell--today' : ''}${
+					isDragOver ? ' nb-cal-monthly-cell--drag-over' : ''
+				}`}
+				ref={cellRef}
+				onClick={!isMobile ? () => { void handleDayClick(currentYear, currentMonth, day) } : undefined}
+				onDragOver={e => handleDayDragOver(e, day)}
+				onDragLeave={handleDayDragLeave}
+				onDrop={e => { void handleDayDrop(e, currentYear, currentMonth, day) }}
+				title={!isMobile ? t('calendar_click_to_create') : undefined}
+				onTouchStart={isMobile ? () => { longPressRef.current = window.setTimeout(() => { setActionDay({ year: currentYear, month: currentMonth, day }) }, 500) } : undefined}
+				onTouchMove={isMobile ? () => { if (longPressRef.current) { window.clearTimeout(longPressRef.current); longPressRef.current = null } } : undefined}
+				onTouchEnd={isMobile ? () => { if (longPressRef.current) { window.clearTimeout(longPressRef.current); longPressRef.current = null } } : undefined}
+			>
+				<div className="nb-cal-monthly-cell-header">
+					<span className={`nb-cal-day-num${isToday ? ' nb-cal-day-num--today' : ''}`}>{day}</span>
+				</div>
+
+				<div className="nb-cal-monthly-cell-body">
+					{showRows.map(row => (
+						<DatabaseMonthlyCard key={row._file.path} row={row} />
+					))}
+
+					{extraCount > 0 && (
+						<button className="nb-cal-more-badge" onClick={e => { e.stopPropagation(); setExpandedDay(dayKey) }}>
+							+{extraCount}
+						</button>
+					)}
+				</div>
+			</div>
+		)
+	}
+
+	const DatabaseMonthlyCard = ({row}:{row:NoteRow}) => {
+		return <div
+			key={row._file.path}
+			className="nb-cal-monthly-card"
+			draggable={!isMobile}
+			onDragStart={!isMobile ? e => handleCardDragStart(e, row) : undefined}
+			onClick={(e) => { e.stopPropagation(); void app.workspace.getLeaf().openFile(row._file) }}
+		>
+			<div className=".nb-cal-monthly-card-title-row">
+				{dateField && (() => { const tm = getRowTime(row, dateField.id); return tm ? <span className="nb-cal-time-badge">{tm}</span> : null })()}
+				<span className=".nb-cal-monthly-card-title">{row._title}</span>
+			</div>
+			{!isMobile && (() => {
+				const dbFolder = dbFile?.parent?.path ?? ''
+				const fileFolder = row._file.parent?.path ?? ''
+				const relPath = activeView.includeSubfolders && fileFolder.length > dbFolder.length
+					? fileFolder.slice(dbFolder.length + 1) : ''
+				return relPath ? <div className="nb-folder-path">{relPath}</div> : null
+			})()}
+			{!isMobile && visibleCols.length > 0 && (
+				<div className="nb-cal-card-props">
+					{visibleCols.map(col => {
+						const val = row[col.id]
+						if (val === null || val === undefined || stringifyScalar(val).trim() === '') return null
+						const display = Array.isArray(val) ? (val as string[]).join(', ') : stringifyScalar(val)
+						return (
+							<span key={col.id} className="nb-cal-card-prop">
+								{display}
+							</span>
+						)
+					})}
+				</div>
+			)}
+		</div>
+
+	}
+
+	const DatabaseNoRowContainer = ()=> {
+		return <div className="nb-cal-no-date">
+			<div className="nb-cal-no-date-title">{t('calendar_no_date_section')} ({noDateRows.length})</div>
+			<div className="nb-cal-no-date-list">
+				{noDateRows.map(row => (
+					<div
+						key={row._file.path}
+						className="nb-cal-card nb-cal-card--no-date"
+						draggable
+						onDragStart={e => handleCardDragStart(e, row)}
+						onClick={() => { void app.workspace.getLeaf().openFile(row._file) }}
+					>
+						<span className="nb-cal-card-title">{row._title}</span>
+						{(() => {
+							const dbFolder = dbFile?.parent?.path ?? ''
+							const fileFolder = row._file.parent?.path ?? ''
+							const relPath = activeView.includeSubfolders && fileFolder.length > dbFolder.length
+								? fileFolder.slice(dbFolder.length + 1) : ''
+							return relPath ? <div className="nb-folder-path">{relPath}</div> : null
+						})()}
+					</div>
+				))}
+			</div>
+		</div>
+	}
+
 	return (
 		<div className="nb-container">
 			{toolbarContent}
@@ -590,229 +869,11 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 				</div>
 			) : (
 				<>
-					{viewMode === 'week' ? (
-						<div className="nb-cal-week-container">
-							{/* All-day row */}
-							<div className="nb-cal-week-allday">
-								<div className="nb-cal-week-time-gutter nb-cal-week-allday-label">{t('calendar_all_day')}</div>
-								{weekDays.map(d => {
-									const key = dateKey(d.getFullYear(), d.getMonth(), d.getDate())
-									const dayRows = (rowsByDate.get(key) ?? []).filter(row => {
-										const p = parseDateValue((row as Record<string, unknown>)[dateField.id])
-										return !p || p.hour === undefined
-									})
-									return (
-										<div
-											key={key}
-											className="nb-cal-week-allday-cell"
-											onClick={() => { void handleDayClick(d.getFullYear(), d.getMonth(), d.getDate()) }}
-											onDragOver={e => handleDayDragOver(e, d.getDate())}
-											onDragLeave={handleDayDragLeave}
-											onDrop={e => { void handleDayDrop(e, d.getFullYear(), d.getMonth(), d.getDate()) }}
-										>
-											{dayRows.map(row => (
-												<div
-													key={row._file.path}
-													className="nb-cal-card nb-cal-card--allday"
-													draggable
-													onDragStart={e => handleCardDragStart(e, row)}
-													onClick={e => { e.stopPropagation(); void app.workspace.getLeaf().openFile(row._file) }}
-												>
-													<span className="nb-cal-card-title">{row._title}</span>
-												</div>
-											))}
-										</div>
-									)
-								})}
-							</div>
-							{/* Day headers */}
-							<div className="nb-cal-week-header">
-								<div className="nb-cal-week-time-gutter" />
-								{weekDays.map(d => {
-									const isToday = d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate()
-									return (
-										<div key={d.toISOString()} className={`nb-cal-week-day-header${isToday ? ' nb-cal-week-day-header--today' : ''}`}>
-											{DAYS_SHORT()[d.getDay()]} {d.getDate()}
-										</div>
-									)
-								})}
-							</div>
-							{/* Time grid */}
-							<div className="nb-cal-week-body" ref={weekBodyRef}>
-								{/* Current time indicator spanning full width */}
-								{weekDays.some(d => d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate()) && (
-									<div
-										className="nb-cal-now-line"
-										style={{ top: `${(nowMinutes / 1440) * 48 * 24}px` }}
-									/>
-								)}
-								<div className="nb-cal-week-time-gutter">
-									{Array.from({ length: 24 }, (_, h) => (
-										<div key={h} className="nb-cal-week-hour-label">
-											{formatTime(h, 0)}
-										</div>
-									))}
-								</div>
-								{weekDays.map(d => {
-									const key = dateKey(d.getFullYear(), d.getMonth(), d.getDate())
-									const isToday = d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate()
-									const timedRows = (rowsByDate.get(key) ?? []).filter(row => {
-										const p = parseDateValue((row as Record<string, unknown>)[dateField.id])
-										return p && p.hour !== undefined
-									})
-									return (
-										<div
-											key={key}
-											className={`nb-cal-week-day-col${isToday ? ' nb-cal-week-day-col--today' : ''}`}
-											onClick={() => { void handleDayClick(d.getFullYear(), d.getMonth(), d.getDate()) }}
-											onDragOver={e => handleDayDragOver(e, d.getDate())}
-											onDragLeave={handleDayDragLeave}
-											onDrop={e => { void handleDayDrop(e, d.getFullYear(), d.getMonth(), d.getDate()) }}
-										>
-											{/* Hour grid lines */}
-											{Array.from({ length: 24 }, (_, h) => (
-												<div key={h} className="nb-cal-week-hour-slot" />
-											))}
-											{/* Positioned timed events */}
-											{timedRows.map(row => {
-												const p = parseDateValue((row as Record<string, unknown>)[dateField.id])
-												if (!p || p.hour === undefined || p.minute === undefined) return null
-												const topPct = ((p.hour * 60 + p.minute) / 1440) * 100
-												return (
-													<div
-														key={row._file.path}
-														className="nb-cal-card nb-cal-card--timed"
-														draggable
-														onDragStart={e => handleCardDragStart(e, row)}
-														onClick={e => { e.stopPropagation(); void app.workspace.getLeaf().openFile(row._file) }}
-														style={{ top: `${topPct}%` }}
-													>
-														<div className="nb-cal-card-title-row">
-															<span className="nb-cal-time-badge">{formatTime(p.hour, p.minute)}</span>
-															<span className="nb-cal-card-title">{row._title}</span>
-														</div>
-													</div>
-												)
-											})}
-										</div>
-									)
-								})}
-							</div>
-						</div>
-					) : (
-					<div className="nb-cal-grid">
-						{/* Day headers */}
-						{DAYS_SHORT().map(d => (
-							<div key={d} className="nb-cal-day-header">{d}</div>
-						))}
-
-						{/* Day cells */}
-						{calendarCells.map((day, idx) => {
-								if (day === null) {
-									return <div key={`empty-${idx}`} className="nb-cal-cell nb-cal-cell--outside" />
-								}
-								const isToday  = day === todayDay
-								const isDragOver = day === dragOverDay
-								const dayRows  = rowsByDate.get(dateKey(currentYear, currentMonth, day)) ?? []
-								return (
-									<div
-										key={day}
-										className={`nb-cal-cell${isToday ? ' nb-cal-cell--today' : ''}${isDragOver ? ' nb-cal-cell--drag-over' : ''}`}
-										onClick={!isMobile ? () => { void handleDayClick(currentYear, currentMonth, day) } : undefined}
-										onDragOver={e => handleDayDragOver(e, day)}
-										onDragLeave={handleDayDragLeave}
-										onDrop={e => { void handleDayDrop(e, currentYear, currentMonth, day) }}
-										title={!isMobile ? t('calendar_click_to_create') : undefined}
-										onTouchStart={isMobile ? () => { longPressRef.current = window.setTimeout(() => { setActionDay({ year: currentYear, month: currentMonth, day }) }, 500) } : undefined}
-										onTouchMove={isMobile ? () => { if (longPressRef.current) { window.clearTimeout(longPressRef.current); longPressRef.current = null } } : undefined}
-										onTouchEnd={isMobile ? () => { if (longPressRef.current) { window.clearTimeout(longPressRef.current); longPressRef.current = null } } : undefined}
-									>
-										<div className="nb-cal-cell-header">
-											<span className={`nb-cal-day-num${isToday ? ' nb-cal-day-num--today' : ''}`}>{day}</span>
-										</div>
-									<div className="nb-cal-cell-body">
-										{(() => {
-											const mobileMax = 1
-											const showRows = isMobile && dayRows.length > mobileMax ? dayRows.slice(0, mobileMax) : dayRows
-											const extraCount = isMobile ? dayRows.length - showRows.length : 0
-											const dayKey = dateKey(currentYear, currentMonth, day)
-											return <>
-												{showRows.map(row => (
-													<div
-														key={row._file.path}
-														className="nb-cal-card"
-														draggable={!isMobile}
-														onDragStart={!isMobile ? e => handleCardDragStart(e, row) : undefined}
-														onClick={(e) => { e.stopPropagation(); void app.workspace.getLeaf().openFile(row._file) }}
-													>
-														<div className="nb-cal-card-title-row">
-															{dateField && (() => { const tm = getRowTime(row, dateField.id); return tm ? <span className="nb-cal-time-badge">{tm}</span> : null })()}
-															<span className="nb-cal-card-title">{row._title}</span>
-														</div>
-														{!isMobile && (() => {
-															const dbFolder = dbFile?.parent?.path ?? ''
-															const fileFolder = row._file.parent?.path ?? ''
-															const relPath = activeView.includeSubfolders && fileFolder.length > dbFolder.length
-																? fileFolder.slice(dbFolder.length + 1) : ''
-															return relPath ? <div className="nb-folder-path">{relPath}</div> : null
-														})()}
-														{!isMobile && visibleCols.length > 0 && (
-															<div className="nb-cal-card-props">
-																{visibleCols.map(col => {
-																	const val = row[col.id]
-																	if (val === null || val === undefined || stringifyScalar(val).trim() === '') return null
-																	const display = Array.isArray(val) ? (val as string[]).join(', ') : stringifyScalar(val)
-																	return (
-																		<span key={col.id} className="nb-cal-card-prop">
-																			{display}
-																		</span>
-																	)
-																})}
-															</div>
-														)}
-													</div>
-												))}
-												{extraCount > 0 && (
-													<button className="nb-cal-more-badge" onClick={e => { e.stopPropagation(); setExpandedDay(dayKey) }}>
-														+{extraCount}
-													</button>
-												)}
-											</>
-										})()}
-									</div>
-								</div>
-							)
-						})
-						}
-					</div>
-					)}
-
-					{/* No-date rows */}
-					{noDateRows.length > 0 && (
-						<div className="nb-cal-no-date">
-							<div className="nb-cal-no-date-title">{t('calendar_no_date_section')} ({noDateRows.length})</div>
-							<div className="nb-cal-no-date-list">
-								{noDateRows.map(row => (
-									<div
-										key={row._file.path}
-										className="nb-cal-card nb-cal-card--no-date"
-										draggable
-										onDragStart={e => handleCardDragStart(e, row)}
-										onClick={() => { void app.workspace.getLeaf().openFile(row._file) }}
-									>
-										<span className="nb-cal-card-title">{row._title}</span>
-										{(() => {
-											const dbFolder = dbFile?.parent?.path ?? ''
-											const fileFolder = row._file.parent?.path ?? ''
-											const relPath = activeView.includeSubfolders && fileFolder.length > dbFolder.length
-												? fileFolder.slice(dbFolder.length + 1) : ''
-											return relPath ? <div className="nb-folder-path">{relPath}</div> : null
-										})()}
-									</div>
-								))}
-							</div>
-						</div>
-					)}
+					{viewMode === 'week' ?  
+						<DatabaseWeekView/>
+						:<DatabaseMonthlyView/>
+					}
+					{noDateRows.length > 0 && <DatabaseNoRowContainer />}
 				</>
 			)}
 
