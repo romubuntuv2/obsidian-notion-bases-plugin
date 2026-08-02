@@ -7,6 +7,7 @@ import {
 } from '../types'
 import {
 	ActiveFilter, applyFilters,
+	getCardConditionalStyle,
 	getColumnIconStatic, getDefaultOperator,
 } from './filter-utils'
 import { FilterPillsRow } from './FilterPillsRow'
@@ -19,6 +20,7 @@ import { BottomSheet } from './BottomSheet'
 import { SaveIndicator } from './SaveIndicator'
 import { useSaveTracker } from '../hooks/useSaveTracker'
 import { stringifyScalar } from '../value-utils'
+import { ConditionalFormatPanel } from './ConditionalFormatPanel'
 
 interface DatabaseCalendarProps {
 	dbFile: TFile | null
@@ -117,6 +119,7 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 	const [currentMonth, setCurrentMonth] = useState(today.getMonth())
 	const [currentDay, setCurrentDay] = useState(today.getDate())
 	const [filterMenuOpen, setFilterMenuOpen] = useState(false)
+	const [cfPanelOpen, setCfPanelOpen] = useState(false)
 	const [fieldsMenuOpen, setFieldsMenuOpen] = useState(false)
 	const [dateFieldMenuOpen, setDateFieldMenuOpen] = useState(false)
 	const [dragOverDay, setDragOverDay] = useState<number | null>(null)
@@ -129,6 +132,7 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 	const filterMenuRef = useRef<HTMLDivElement>(null)
 	const fieldsMenuRef = useRef<HTMLDivElement>(null)
 	const dateFieldMenuRef = useRef<HTMLDivElement>(null)
+	const cfPanelRef = useRef<HTMLDivElement>(null)
 	const mobileActionBarRef = useRef<HTMLDivElement>(null)
 
 	useEffect(() => { setActiveView(externalView) }, [externalView.id])
@@ -175,6 +179,22 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 		}
 		activeDocument.addEventListener('mousedown', h); return () => activeDocument.removeEventListener('mousedown', h)
 	}, [dateFieldMenuOpen])
+
+	useEffect(() => {
+		if (!cfPanelOpen) return
+
+		const h = (e: MouseEvent) => {
+			if (
+				cfPanelRef.current &&
+				!cfPanelRef.current.contains(e.target as Node)
+			) {
+				setCfPanelOpen(false)
+			}
+		}
+
+		activeDocument.addEventListener("mousedown", h)
+		return () => activeDocument.removeEventListener("mousedown", h)
+	}, [cfPanelOpen])
 
 	// ── Derived data ─────────────────────────────────────────────────────────
 
@@ -564,6 +584,28 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 						</div>
 					)}
 				</div>
+
+				{/* Conditional formatting */}
+				<div className="nb-fields-menu-wrapper" ref={cfPanelRef}>
+					<button
+						className={`nb-toolbar-btn nb-toolbar-btn--icon${(activeView.conditionalFormats?.length ?? 0) > 0 ? ' nb-toolbar-btn--active' : ''}`}
+						onClick={() => setCfPanelOpen(v => !v)}
+						title={t('conditional_formatting')}
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+							<rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18" /><path d="M3 15h18" /><path d="M9 3v18" />
+						</svg>
+						{(activeView.conditionalFormats?.length ?? 0) > 0 && <span className="nb-hidden-badge">{activeView.conditionalFormats!.length}</span>}
+					</button>
+					{cfPanelOpen && (
+						<ConditionalFormatPanel
+							rules={activeView.conditionalFormats ?? []}
+							schema={config.schema}
+							onChange={rules => { void saveView({ ...activeView, conditionalFormats: rules }) }}
+							onClose={() => setCfPanelOpen(false)}
+						/>
+					)}
+				</div>
 			</div>
 
 			{/* Filter pills */}
@@ -799,10 +841,20 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 			? fileFolder.slice(dbFolder.length + 1)
 			: ''
 
+		const cardStyle =
+			activeView.conditionalFormats?.length
+				? getCardConditionalStyle(
+						row,
+						activeView.conditionalFormats,
+						config.schema
+				)
+				: undefined
+
 		return (
 			<div
 				key={row._file.path}
 				className="nb-board-card nb-cal-monthly-card"
+				style={cardStyle}
 				draggable={!isMobile}
 				onDragStart={!isMobile ? e => {
 					e.stopPropagation()
