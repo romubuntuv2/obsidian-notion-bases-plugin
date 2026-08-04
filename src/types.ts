@@ -212,3 +212,19 @@ declare module '@tanstack/react-table' {
 		schema: ColumnSchema[]
 	}
 }
+
+
+// -- NEW COLUMN FIELDS ----------------------------------------------------------------
+
+export interface DatabaseField extends ColumnSchema {
+	/**
+	 * True if this field is computed and not stored
+	 * in the database schema.
+	 */
+	virtual?: boolean
+
+	/**
+	 * Indicates where the field comes from.
+	 */
+	source?: 'local' | 'shared' | 'virtual'
+}
