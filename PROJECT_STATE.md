@@ -55,8 +55,8 @@ Stable invariants that must be preserved:
 - [x] Board and Calendar reuse the same note context-menu implementation.
 - [x] Column limits, show more/less, filtering, conditional formatting, and virtualization.
 - [x] All Board mobile/touch interaction paths removed.
-- [x] `EditableSelector` — implemented for Calendar monthly cards.
-- [ ] `EditableDate` — not implemented.
+- [x] `EditableSelector` — implemented for Calendar monthly cards and Board cards.
+- [x] `EditableDate` — implemented for Board card properties.
 
 ### Editable fields
 
@@ -65,14 +65,27 @@ Editable field components live in `src/components/EditableFields/`:
 ```text
 EditableFields/
 ├── EditableTitle.tsx
-└── EditableSelector.tsx
+├── EditableSelector.tsx
+└── EditableDate.tsx
 ```
 
 `EditableSelector` displays configured options, supports clearing values, uses
 single-choice behavior for `select`/`status`, and toggle behavior for `multiselect`.
 It persists through `DatabaseManager.updateNoteField`, including inline-field metadata.
+Calendar monthly cards and Board cards share this implementation. On Board cards, the
+grouping property remains excluded because it is edited by moving the card between
+columns.
 Creating, renaming, recoloring, or deleting schema options is intentionally outside this
 first Calendar implementation.
+
+`EditableDate` is currently used on Board cards. It hides the property name, displays a
+compact French label such as `Lun 12 Janv.`, and opens the native date picker from a
+small content-sized control. Its dimensions and typography match selector badges; the
+empty state matches the compact selector placeholder. Board properties below the title
+share a wrapping inline row with a uniform 5 px gap: date and selector stay side by side when
+space permits and move naturally onto the next line otherwise. The editor preserves an
+existing time suffix, supports clearing the date, persists through
+`DatabaseManager.updateNoteField`, and leaves system dates read-only.
 
 Confirmed visual behavior on Calendar monthly cards:
 
@@ -222,3 +235,17 @@ contracts, and preservation of known-working behavior over generalized abstracti
   `multiselect` properties, including empty fields.
 - Finalized the selector presentation: no property label or outer full-width container,
   content-sized colored badges, and a compact left-aligned placeholder for empty values.
+- Reused `EditableSelector` for visible selector properties on Board cards.
+- Added `EditableDate` for editable Board date properties with compact French labels and
+  the native date picker.
+- Refined `EditableDate` sizing, typography, title-case labels, empty-state alignment,
+  and picker activation so the control no longer overflows its card.
+- Aligned the visible date control with selector badges and changed Board card
+  properties to a compact wrapping inline row with a uniform 5 px gap.
+- Removed the date-only layout wrapper so empty and populated dates reserve exactly
+  their visible width and keep the same gap before the next field.
+- Prevented selector buttons from growing inside the properties row, keeping the visual
+  gap between the date and badge identical to the configured flex gap.
+- Portaled the hidden native date input outside the Board properties flex row and forced
+  populated selectors to `max-content`, removing all invisible horizontal width between
+  the two visible controls.

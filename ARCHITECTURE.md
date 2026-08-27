@@ -223,7 +223,7 @@ Files under `src/components/Board/`:
 | --- | --- |
 | `BoardToolbar.tsx` | Desktop menus, view toggles, filter pills, save state, and conditional-format controls. |
 | `BoardColumn.tsx` | Column drag/drop, limits, expansion, cards, and add-card action. |
-| `BoardCard.tsx` | Editable title, visible properties, folder path, card drag, and right-click forwarding. |
+| `BoardCard.tsx` | Editable title/selectors/dates, visible properties, folder path, card drag, and right-click forwarding. |
 | `LazyBoardCard.tsx` | IntersectionObserver-based rendering for large columns. |
 | `board-types.ts` | Column data contract, drag MIME keys, and virtualization threshold. |
 
@@ -273,11 +273,14 @@ Reusable inline editors live in `src/components/EditableFields/`.
 | --- | --- |
 | `EditableTitle.tsx` | Single-click open, double-click rename, and rename persistence through `DatabaseManager`. |
 | `EditableSelector.tsx` | Fixed-position option menu and persistence for `select`, `status`, and `multiselect` fields. |
+| `EditableDate.tsx` | Compact French date display, native date-picker activation, and date persistence. |
 
 `EditableSelector` receives the `ColumnSchema`, current value, target `TFile`, manager,
 and optional inline-field metadata. It updates optimistically, rolls back on failure,
-and persists through `DatabaseManager.updateNoteField`. Calendar monthly cards render
-the editor even for empty selector values so a value can be assigned directly.
+and persists through `DatabaseManager.updateNoteField`. Calendar monthly cards and Board
+cards render the editor even for empty selector values so a value can be assigned
+directly. The Board grouping property is intentionally absent from card properties;
+moving a card between columns remains its editing mechanism.
 
 Visual contract on Calendar monthly cards:
 
@@ -294,6 +297,33 @@ compact while still being discoverable.
 
 Schema-option management is not part of this component's first iteration: it consumes
 the existing options but does not create, rename, recolor, or delete them.
+
+`EditableDate` is initially integrated into Board cards for non-system date columns. It
+renders no property label and formats valid `YYYY-MM-DD` values with deterministic
+French abbreviations in title case (`Lun 12 Janv.`). The visible button is content-sized,
+left-aligned, and uses dimensions and typography aligned with selector badges. Its empty
+state uses the same quarter-width 48–88 px placeholder contract as
+`EditableSelector`.
+
+Board fields rendered below `EditableTitle` live inside
+`nb-board-card-props--inline`, a left-aligned flex row with wrapping and a uniform 5 px
+gap. Editors remain content-sized and share a line while they fit; normal flex wrapping
+moves the next field to a new line when the card width is insufficient. This layout is
+Board-specific and does not alter Calendar property stacking.
+
+`EditableDate` exposes its visible button directly as the flex item; it must not add a
+layout wrapper around that button. The hidden native input is portaled to
+`activeDocument.body`, completely outside the properties flex row. Empty and populated
+dates therefore reserve only their visible width, making
+the container's 5 px gap the sole spacing before the next editor. Selector
+buttons use `flex: 0 0 auto` and left justification so their transparent button surface
+cannot consume the remaining row width or center the visible badge away from that gap.
+
+Picker activation is explicit: the visible button calls `HTMLInputElement.showPicker()`
+during the user gesture, while the native `input[type="date"]` remains a one-pixel,
+non-interactive anchor. It must never overlay or stretch across the card. The component
+updates optimistically, preserves an existing `T...` time suffix, rolls back on failure,
+and writes through `DatabaseManager.updateNoteField`.
 
 ## 14. Verification
 
@@ -330,3 +360,18 @@ the production bundle and Vitest.
 - Added `EditableSelector` and integrated it into Calendar monthly-card properties.
 - Documented and stabilized the compact selector states: badge-only for populated values
   and a quarter-width gray dash placeholder for empty values.
+- Reused `EditableSelector` on Board card properties while keeping the grouping field
+  controlled by column drag/drop.
+- Added `EditableDate` to Board card properties with compact French formatting and the
+  native date picker.
+- Matched `EditableDate` typography and empty-state dimensions to selectors, changed
+  labels to title case, and replaced the overflowing input overlay with explicit picker
+  activation.
+- Slightly enlarged the visible date control to align it with selector badges and made
+  Board card fields flow inline with a uniform 5 px gap and automatic wrapping.
+- Removed the date layout wrapper that could reserve invisible width and produce a
+  state-dependent visual gap.
+- Prevented selector buttons from stretching inside Board property rows, making the
+  configured horizontal spacing match the visible badge spacing.
+- Portaled the native date input outside the properties row and constrained populated
+  selector buttons to `max-content`, eliminating invisible spacing from both controls.

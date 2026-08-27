@@ -1657,7 +1657,8 @@
 }
 
 .nb-cell-multiselect {
-	gap: 3px;
+	row-gap: 5px;
+	column-gap: 1px;
 	flex-wrap: nowrap;
 	overflow: hidden;
 }
@@ -2974,6 +2975,18 @@
 	gap: 2px;
 }
 
+.nb-board-card-props--inline {
+	flex-direction: row;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: flex-start;
+	gap: 5px;
+}
+
+.nb-board-card-props--inline > * {
+	margin: 0;
+}
+
 .nb-board-card-prop {
 	display: flex;
 	gap: 4px;
@@ -2995,7 +3008,9 @@
 .nb-editable-selector {
 	display: inline-flex;
 	align-items: center;
+	justify-content: flex-start;
 	align-self: flex-start;
+	flex: 0 0 auto;
 	flex-wrap: wrap;
 	gap: 4px;
 	min-width: 0;
@@ -3016,6 +3031,13 @@
 .nb-editable-selector--open {
 	background: transparent !important;
 	box-shadow: none !important;
+}
+
+.nb-board-card-props--inline > .nb-editable-selector--has-value {
+	flex: 0 0 max-content !important;
+	width: max-content;
+	max-width: 100%;
+	justify-content: flex-start !important;
 }
 
 .nb-editable-selector--empty,
@@ -3045,6 +3067,71 @@
 .nb-editable-selector-empty {
 	color: var(--text-muted);
 	cursor: default;
+}
+
+.nb-editable-date {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	align-self: flex-start;
+	flex: 0 0 auto;
+	width: fit-content;
+	max-width: 100%;
+	height: auto;
+	min-height: 22px;
+	margin: 0;
+	padding: 2px 8px;
+	border: 0 !important;
+	border-radius: 3px;
+	background: var(--background-modifier-hover) !important;
+	box-shadow: none !important;
+	color: var(--text-muted);
+	font-size: calc(var(--font-ui-smaller) + 1px);
+	font-weight: 500;
+	line-height: normal;
+	letter-spacing: normal;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	cursor: pointer;
+	appearance: none;
+	box-sizing: border-box;
+}
+
+.nb-editable-date:hover {
+	background: var(--background-modifier-hover) !important;
+	box-shadow: none !important;
+	color: var(--text-normal);
+}
+
+.nb-editable-date--empty {
+	width: 25%;
+	min-width: 48px;
+	max-width: 88px;
+	padding: 5px 8px;
+	border-radius: var(--radius-s);
+}
+
+.nb-editable-date--saving {
+	opacity: 0.7;
+	cursor: progress;
+}
+
+.nb-editable-date-input {
+	position: fixed;
+	left: 0;
+	top: 0;
+	width: 1px;
+	height: 1px;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	opacity: 0;
+	pointer-events: none;
+}
+
+.nb-editable-date-input:disabled {
+	cursor: progress;
 }
 
 .nb-board-add-card {
