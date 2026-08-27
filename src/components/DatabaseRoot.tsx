@@ -112,6 +112,68 @@ export function DatabaseRoot({
 		return () => app.metadataCache.off('changed', onChange)
 	}, [dbFile, manager, app, isDirectMode])
 
+	useEffect(() => {
+	if (isForcedEmbed) return
+
+	const handleKeyDown = (e: KeyboardEvent) => {
+		const target = e.target as HTMLElement | null
+
+		if (
+			target instanceof HTMLInputElement ||
+			target instanceof HTMLTextAreaElement ||
+			target instanceof HTMLSelectElement ||
+			target?.isContentEditable
+		) {
+			return
+		}
+
+		if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+
+		const views = isFreeEmbed ? embedViews : config.views
+		const currentId = isFreeEmbed ? embedActiveId : activeViewId
+
+		if (views.length <= 1) return
+
+		const currentIndex = views.findIndex(view => view.id === currentId)
+		if (currentIndex === -1) return
+
+		const direction = e.key === 'ArrowRight' ? 1 : -1
+
+		const nextIndex =
+			(currentIndex + direction + views.length) % views.length
+
+		const nextView = views[nextIndex]
+		if (!nextView) return
+
+		e.preventDefault()
+
+		if (isFreeEmbed) {
+			setEmbedActiveId(nextView.id)
+
+			void onEmbedStateChange?.({
+				activeViewId: nextView.id,
+				views: embedViews,
+			})
+		} else {
+			setActiveViewId(nextView.id)
+		}
+	}
+
+	activeDocument.addEventListener('keydown', handleKeyDown)
+
+	return () => {
+		activeDocument.removeEventListener('keydown', handleKeyDown)
+	}
+}, [
+	isForcedEmbed,
+	isFreeEmbed,
+	config.views,
+	activeViewId,
+	embedViews,
+	embedActiveId,
+	onEmbedStateChange,
+])
+
 	// Close menus on outside click
 	useEffect(() => {
 		if (!addMenuOpen) return

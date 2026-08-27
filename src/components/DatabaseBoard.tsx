@@ -514,8 +514,12 @@ export function DatabaseBoard({ dbFile, manager, externalView, onViewChange }: D
 
 	const isMobile = useIsMobile()
 
+
+
 	const dbFolderPath = dbFile?.parent?.path ?? ''
-	const openFile = useCallback((file: TFile) => { void app.workspace.getLeaf().openFile(file) }, [app])
+	const openFile = useCallback((file: TFile) => {
+		void app.workspace.getLeaf().openFile(file)
+	}, [app])
 	const handleCardDragStart = useCallback((e: React.DragEvent, filePath: string) => {
 		e.dataTransfer.effectAllowed = 'move'
 		e.dataTransfer.setData('nb-drag-type', DRAG_TYPE_CARD)
