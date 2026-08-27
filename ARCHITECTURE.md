@@ -279,6 +279,19 @@ and optional inline-field metadata. It updates optimistically, rolls back on fai
 and persists through `DatabaseManager.updateNoteField`. Calendar monthly cards render
 the editor even for empty selector values so a value can be assigned directly.
 
+Visual contract on Calendar monthly cards:
+
+```text
+value present  → left-aligned colored badge, width = badge content
+empty value    → left-aligned gray dash placeholder, width ≈ 25% of card
+```
+
+The Calendar does not render the selector property's name or a surrounding
+`nb-board-card-prop` wrapper. The technical button is visually transparent when a value
+exists, uses `align-self: flex-start`/`width: fit-content`, and its clickable area must
+not stretch across the card. The empty state is constrained to 48–88 px so it remains
+compact while still being discoverable.
+
 Schema-option management is not part of this component's first iteration: it consumes
 the existing options but does not create, rename, recolor, or delete them.
 
@@ -315,3 +328,5 @@ the production bundle and Vitest.
 - Reused the shared context menu across Board and every Calendar card variant.
 - Moved `EditableTitle` into `components/EditableFields/`.
 - Added `EditableSelector` and integrated it into Calendar monthly-card properties.
+- Documented and stabilized the compact selector states: badge-only for populated values
+  and a quarter-width gray dash placeholder for empty values.

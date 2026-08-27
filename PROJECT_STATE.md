@@ -74,6 +74,15 @@ It persists through `DatabaseManager.updateNoteField`, including inline-field me
 Creating, renaming, recoloring, or deleting schema options is intentionally outside this
 first Calendar implementation.
 
+Confirmed visual behavior on Calendar monthly cards:
+
+- the property name is not displayed before the selector;
+- a selector with a value shows only its colored badge, aligned left and sized to its text;
+- the clickable area matches the visible badge rather than the full card width;
+- an empty selector shows a small gray placeholder with a centered dash;
+- the empty placeholder is aligned left and uses approximately one quarter of the card width,
+  constrained between 48 px and 88 px.
+
 ### Database navigation
 
 - [x] `DatabasePickerModal` is available through a shortcut.
@@ -211,3 +220,5 @@ contracts, and preservation of known-working behavior over generalized abstracti
 - Moved `EditableTitle` into the new `components/EditableFields/` module.
 - Added `EditableSelector` for Calendar monthly-card `select`, `status`, and
   `multiselect` properties, including empty fields.
+- Finalized the selector presentation: no property label or outer full-width container,
+  content-sized colored badges, and a compact left-aligned placeholder for empty values.
