@@ -33,6 +33,8 @@ out of scope and must not be reintroduced. New features target desktop Obsidian 
 - [x] Conditional formatting on monthly cards.
 - [x] Subfolder paths on Calendar cards.
 - [x] Inline title editing through the shared `EditableTitle` component.
+- [x] Inline editing of `select`, `status`, and `multiselect` properties on monthly cards.
+- [x] Shared native Obsidian context menu on month, week, and no-date cards.
 - [x] Calendar implementation split into focused files under `src/components/Calendar/`.
 
 Stable invariants that must be preserved:
@@ -50,10 +52,27 @@ Stable invariants that must be preserved:
 - [x] Board implementation split into focused files under `src/components/Board/`.
 - [x] Desktop HTML drag/drop for cards and columns.
 - [x] Desktop-native Obsidian context menu for card actions.
+- [x] Board and Calendar reuse the same note context-menu implementation.
 - [x] Column limits, show more/less, filtering, conditional formatting, and virtualization.
 - [x] All Board mobile/touch interaction paths removed.
-- [ ] `EditableSelector` — not implemented.
+- [x] `EditableSelector` — implemented for Calendar monthly cards.
 - [ ] `EditableDate` — not implemented.
+
+### Editable fields
+
+Editable field components live in `src/components/EditableFields/`:
+
+```text
+EditableFields/
+├── EditableTitle.tsx
+└── EditableSelector.tsx
+```
+
+`EditableSelector` displays configured options, supports clearing values, uses
+single-choice behavior for `select`/`status`, and toggle behavior for `multiselect`.
+It persists through `DatabaseManager.updateNoteField`, including inline-field metadata.
+Creating, renaming, recoloring, or deleting schema options is intentionally outside this
+first Calendar implementation.
 
 ### Database navigation
 
@@ -103,6 +122,13 @@ The Board is desktop-only. Cards and columns use native HTML drag/drop; card act
 Obsidian's desktop context menu. No touch-drag, long-press, mobile toolbar, or BottomSheet
 code remains in the Board implementation.
 
+## Shared note context menu
+
+`src/components/ContextMenu/showNoteContextMenu.ts` owns the reusable native Obsidian
+menu for a note. It provides open, duplicate, and delete actions and is currently used
+by Board cards and every Calendar card variant (monthly, weekly all-day, weekly timed,
+and rows without a date).
+
 ## Calendar date behavior
 
 The Calendar uses the native JavaScript `Date` API. Pure date helpers now live in
@@ -151,7 +177,7 @@ On 2026-08-27 after the Calendar and Board splits:
 
 - `npm run build`: passes.
 - `npm test`: all 8 test files and 189 tests pass.
-- targeted ESLint for Calendar, Board, and `EditableTitle`: passes.
+- targeted ESLint for Calendar, Board, and `EditableFields`: passes.
 - `EditableTitle` now uses relative imports, a popout-safe `window.requestAnimationFrame`,
   and a void-returning blur handler.
 
@@ -180,3 +206,8 @@ contracts, and preservation of known-working behavior over generalized abstracti
   toolbar, and BottomSheets.
 - Replaced the shared card action sheet with Obsidian's native desktop context menu.
 - Fixed `EditableTitle` imports and event wrappers so the full test suite passes.
+- Extracted the Board card menu into the shared `ContextMenu/showNoteContextMenu` helper.
+- Added the shared native context menu to all Calendar card variants.
+- Moved `EditableTitle` into the new `components/EditableFields/` module.
+- Added `EditableSelector` for Calendar monthly-card `select`, `status`, and
+  `multiselect` properties, including empty fields.

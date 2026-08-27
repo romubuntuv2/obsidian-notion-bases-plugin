@@ -147,7 +147,8 @@ belongs on `ViewConfig` beside `calendarDateField` and `calendarViewMode`.
 - date-changing drag/drop.
 
 `DatabaseMonthlyCard` uses the complete schema for conditional-format evaluation and the
-visible-column subset for property display. It reuses the shared `EditableTitle`.
+visible-column subset for property display. It reuses `EditableTitle` and delegates
+`select`, `status`, and `multiselect` values to `EditableSelector`.
 
 ## 7. Week view
 
@@ -182,7 +183,7 @@ useDatabaseRows                   rows, schema, filter state
 useDebouncedValue                 filter debounce
 useSaveTracker + SaveIndicator    persistence feedback
 filter-utils                      filtering, icons, conditional formats
-EditableTitle                     inline card-title editing
+EditableFields                    inline title and selector editing
 FilterPillsRow                    active-filter UI
 ConditionalFormatPanel            formatting rule editor
 ```
@@ -243,14 +244,52 @@ Board stability constraints:
 6. virtualization for columns with at least 30 visible cards;
 7. the `DatabaseBoard` integration API used by `DatabaseRoot`.
 
-## 12. Verification
+## 12. Shared note context menu
+
+`src/components/ContextMenu/showNoteContextMenu.ts` is the single owner of native note
+context-menu construction. Callers provide the desktop mouse event, Obsidian `App`,
+`DatabaseManager`, and target `TFile`.
+
+```text
+BoardCard / Calendar card
+          ↓ right-click
+showNoteContextMenu
+          ↓
+Obsidian Menu
+├── Open note
+├── Duplicate note
+└── Delete note
+```
+
+Current consumers are Board cards, Calendar monthly cards, weekly all-day cards, weekly
+timed cards, and Calendar rows without a date. New note-based views should reuse this
+helper instead of rebuilding the three actions locally.
+
+## 13. Editable fields
+
+Reusable inline editors live in `src/components/EditableFields/`.
+
+| Component | Responsibility |
+| --- | --- |
+| `EditableTitle.tsx` | Single-click open, double-click rename, and rename persistence through `DatabaseManager`. |
+| `EditableSelector.tsx` | Fixed-position option menu and persistence for `select`, `status`, and `multiselect` fields. |
+
+`EditableSelector` receives the `ColumnSchema`, current value, target `TFile`, manager,
+and optional inline-field metadata. It updates optimistically, rolls back on failure,
+and persists through `DatabaseManager.updateNoteField`. Calendar monthly cards render
+the editor even for empty selector values so a value can be assigned directly.
+
+Schema-option management is not part of this component's first iteration: it consumes
+the existing options but does not create, rename, recolor, or delete them.
+
+## 14. Verification
 
 The structural refactors are verified with TypeScript and the production bundle through
-`npm run build`. Calendar-, Board-, and `EditableTitle`-specific lint passes. All 8 test
+`npm run build`. Calendar-, Board-, and `EditableFields`-specific lint passes. All 8 test
 files and 189 tests pass. `EditableTitle` uses relative imports so it resolves in both
 the production bundle and Vitest.
 
-## 13. Changelog
+## 15. Changelog
 
 ### 2026-08-27
 
@@ -272,3 +311,7 @@ the production bundle and Vitest.
 - Preserved desktop card actions through Obsidian's native context menu.
 - Corrected `EditableTitle` imports and event wrappers, restoring a fully passing test
   suite.
+- Extracted native note actions into `ContextMenu/showNoteContextMenu`.
+- Reused the shared context menu across Board and every Calendar card variant.
+- Moved `EditableTitle` into `components/EditableFields/`.
+- Added `EditableSelector` and integrated it into Calendar monthly-card properties.

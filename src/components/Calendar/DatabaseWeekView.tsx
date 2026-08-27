@@ -3,7 +3,7 @@ import { ColumnSchema, NoteRow } from '../../types'
 import { t } from '../../i18n'
 import { dateKey, daysShort, formatTime, parseDateValue } from './calendar-utils'
 import {
-	CardDragHandler, DayClickHandler, DayDragLeaveHandler, DayDragOverHandler,
+	CardContextMenuHandler, CardDragHandler, DayClickHandler, DayDragLeaveHandler, DayDragOverHandler,
 	DayDropHandler, RowsByDate,
 } from './calendar-types'
 
@@ -20,11 +20,12 @@ interface DatabaseWeekViewProps {
 	onDayDragLeave: DayDragLeaveHandler
 	onDayDrop: DayDropHandler
 	onOpenRow: (row: NoteRow) => void
+	onCardContextMenu: CardContextMenuHandler
 }
 
 export function DatabaseWeekView({
 	dateField, weekDays, rowsByDate, today, nowMinutes, bodyRef, onDayClick,
-	onCardDragStart, onDayDragOver, onDayDragLeave, onDayDrop, onOpenRow,
+	onCardDragStart, onDayDragOver, onDayDragLeave, onDayDrop, onOpenRow, onCardContextMenu,
 }: DatabaseWeekViewProps) {
 	const isToday = (date: Date) => date.getFullYear() === today.getFullYear()
 		&& date.getMonth() === today.getMonth() && date.getDate() === today.getDate()
@@ -46,6 +47,7 @@ export function DatabaseWeekView({
 					onDrop={event => { void onDayDrop(event, date.getFullYear(), date.getMonth(), date.getDate()) }}>
 					{rows.map(row => <div key={row._file.path} className="nb-cal-card nb-cal-card--allday" draggable
 						onDragStart={event => onCardDragStart(event, row)}
+						onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onCardContextMenu(event, row) }}
 						onClick={event => { event.stopPropagation(); onOpenRow(row) }}>
 						<span className="nb-cal-card-title">{row._title}</span>
 					</div>)}
@@ -80,6 +82,7 @@ export function DatabaseWeekView({
 						if (!parsed || parsed.hour === undefined || parsed.minute === undefined) return null
 						return <div key={row._file.path} className="nb-cal-card nb-cal-card--timed" draggable
 							onDragStart={event => onCardDragStart(event, row)}
+							onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onCardContextMenu(event, row) }}
 							onClick={event => { event.stopPropagation(); onOpenRow(row) }}
 							style={{ top: `${((parsed.hour * 60 + parsed.minute) / 1440) * 100}%` }}>
 							<div className="nb-cal-card-title-row"><span className="nb-cal-time-badge">{formatTime(parsed.hour, parsed.minute)}</span><span className="nb-cal-card-title">{row._title}</span></div>

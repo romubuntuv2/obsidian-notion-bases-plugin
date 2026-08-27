@@ -23,6 +23,7 @@ import { DatabaseNoDateRows } from './Calendar/DatabaseNoDateRows'
 import {
 	buildCalendarGrid, buildWeekGrid, dateKey, formatWeekRange, monthsLong, parseDateValue,
 } from './Calendar/calendar-utils'
+import { showNoteContextMenu } from './ContextMenu/showNoteContextMenu'
 
 interface DatabaseCalendarProps {
 	dbFile: TFile | null
@@ -308,6 +309,9 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 	const openFile = useCallback((file: TFile) => {
 		void app.workspace.getLeaf().openFile(file)
 	}, [app])
+	const handleCardContextMenu = useCallback((event: React.MouseEvent, row: NoteRow) => {
+		showNoteContextMenu({ event: event.nativeEvent, app, manager, file: row._file })
+	}, [app, manager])
 
 	if (!dbFile) return <div className="nb-empty-state"><p>{t('no_database_open')}</p></div>
 	if (loading) return <div className="nb-loading">{t('loading')}</div>
@@ -475,17 +479,19 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 							today={today} nowMinutes={nowMinutes} bodyRef={weekBodyRef}
 							onDayClick={handleDayClick} onCardDragStart={handleCardDragStart}
 							onDayDragOver={handleDayDragOver} onDayDragLeave={handleDayDragLeave}
-							onDayDrop={handleDayDrop} onOpenRow={row => openFile(row._file)} />
+							onDayDrop={handleDayDrop} onOpenRow={row => openFile(row._file)}
+							onCardContextMenu={handleCardContextMenu} />
 						: <DatabaseMonthView calendarCells={calendarCells} cellProps={{
 							currentYear, currentMonth, todayDay, dragOverDay, rowsByDate,
 							dbFile, manager, activeView, dateField, schema: config.schema, visibleColumns: visibleCols,
 							onOpenFile: openFile, onDayClick: handleDayClick, onCardDragStart: handleCardDragStart,
+							onCardContextMenu: handleCardContextMenu,
 							onDayDragOver: handleDayDragOver, onDayDragLeave: handleDayDragLeave, onDayDrop: handleDayDrop,
 						}} />
 					}
 					{noDateRows.length > 0 && <DatabaseNoDateRows rows={noDateRows} dbFile={dbFile}
 						manager={manager} activeView={activeView} onOpenFile={openFile}
-						onCardDragStart={handleCardDragStart} />}
+						onCardDragStart={handleCardDragStart} onCardContextMenu={handleCardContextMenu} />}
 				</div>
 			)}
 		</div>

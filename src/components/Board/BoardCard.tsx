@@ -3,7 +3,7 @@ import { TFile } from 'obsidian'
 import { ColumnSchema, NoteRow } from '../../types'
 import { DatabaseManager } from '../../database-manager'
 import { stringifyScalar } from '../../value-utils'
-import EditableTitle from '../EditableTitle'
+import EditableTitle from '../EditableFields/EditableTitle'
 
 interface BoardCardProps {
 	row: NoteRow

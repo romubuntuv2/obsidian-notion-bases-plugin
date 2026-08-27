@@ -1,4 +1,4 @@
-import { Menu, TFile } from 'obsidian'
+import { TFile } from 'obsidian'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useApp } from '../context'
 import { DatabaseManager } from '../database-manager'
@@ -12,6 +12,7 @@ import { stringifyScalar } from '../value-utils'
 import { BoardColumn } from './Board/BoardColumn'
 import { BoardToolbar } from './Board/BoardToolbar'
 import { BoardColumnData, DRAG_TYPE_CARD } from './Board/board-types'
+import { showNoteContextMenu } from './ContextMenu/showNoteContextMenu'
 
 interface DatabaseBoardProps {
 	dbFile: TFile | null
@@ -144,12 +145,7 @@ export function DatabaseBoard({ dbFile, manager, externalView, onViewChange }: D
 		event.dataTransfer.setData(DRAG_TYPE_CARD, '')
 	}, [])
 	const handleCardContextMenu = useCallback((event: React.MouseEvent, file: TFile) => {
-		const menu = new Menu()
-		menu.addItem(item => item.setTitle(t('open_note')).setIcon('file').onClick(() => { void app.workspace.getLeaf().openFile(file) }))
-		menu.addItem(item => item.setTitle(t('duplicate_note')).setIcon('copy').onClick(() => { void manager.duplicateNotes([file]) }))
-		menu.addSeparator()
-		menu.addItem(item => item.setTitle(t('delete_note')).setIcon('trash').onClick(() => { void manager.deleteNotes([file]) }))
-		menu.showAtMouseEvent(event.nativeEvent)
+		showNoteContextMenu({ event: event.nativeEvent, app, manager, file })
 	}, [app, manager])
 
 	if (!dbFile) return <div className="nb-empty-state"><p>{t('no_database_open')}</p></div>

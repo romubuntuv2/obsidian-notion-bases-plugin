@@ -2992,6 +2992,61 @@
 	text-overflow: ellipsis;
 }
 
+.nb-editable-selector {
+	display: inline-flex;
+	align-items: center;
+	align-self: flex-start;
+	flex-wrap: wrap;
+	gap: 4px;
+	min-width: 0;
+	width: fit-content;
+	height: auto;
+	margin: 0;
+	padding: 0;
+	border: 0 !important;
+	border-radius: 0;
+	background: transparent !important;
+	box-shadow: none !important;
+	color: inherit;
+	cursor: pointer;
+	appearance: none;
+}
+
+.nb-editable-selector:hover,
+.nb-editable-selector--open {
+	background: transparent !important;
+	box-shadow: none !important;
+}
+
+.nb-editable-selector--empty,
+.nb-editable-selector--empty:hover,
+.nb-editable-selector--empty.nb-editable-selector--open {
+	justify-content: center;
+	width: 25%;
+	min-width: 48px;
+	max-width: 88px;
+	padding: 5px 8px;
+	border-radius: var(--radius-s);
+	background: var(--background-modifier-hover) !important;
+}
+
+.nb-editable-selector:disabled {
+	cursor: progress;
+	opacity: 0.7;
+}
+
+.nb-editable-selector-dropdown .nb-select-option {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.nb-editable-selector-empty {
+	color: var(--text-muted);
+	cursor: default;
+}
+
 .nb-board-add-card {
 	margin: 0;
 	padding: 6px 12px;

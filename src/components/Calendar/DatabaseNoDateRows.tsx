@@ -3,8 +3,8 @@ import { TFile } from 'obsidian'
 import { DatabaseManager } from '../../database-manager'
 import { NoteRow, ViewConfig } from '../../types'
 import { t } from '../../i18n'
-import EditableTitle from '../EditableTitle'
-import { CardDragHandler } from './calendar-types'
+import EditableTitle from '../EditableFields/EditableTitle'
+import { CardContextMenuHandler, CardDragHandler } from './calendar-types'
 
 interface DatabaseNoDateRowsProps {
 	rows: NoteRow[]
@@ -13,9 +13,10 @@ interface DatabaseNoDateRowsProps {
 	activeView: ViewConfig
 	onOpenFile: (file: TFile) => void
 	onCardDragStart: CardDragHandler
+	onCardContextMenu: CardContextMenuHandler
 }
 
-export function DatabaseNoDateRows({ rows, dbFile, manager, activeView, onOpenFile, onCardDragStart }: DatabaseNoDateRowsProps) {
+export function DatabaseNoDateRows({ rows, dbFile, manager, activeView, onOpenFile, onCardDragStart, onCardContextMenu }: DatabaseNoDateRowsProps) {
 	const databaseFolder = dbFile.parent?.path ?? ''
 	return <div className="nb-cal-no-date">
 		<div className="nb-cal-no-date-title">{t('calendar_no_date_section')} ({rows.length})</div>
@@ -25,7 +26,9 @@ export function DatabaseNoDateRows({ rows, dbFile, manager, activeView, onOpenFi
 				const relativePath = activeView.includeSubfolders && fileFolder.length > databaseFolder.length
 					? fileFolder.slice(databaseFolder.length + 1) : ''
 				return <div key={row._file.path} className="nb-cal-card nb-cal-card--no-date" draggable
-					onDragStart={event => onCardDragStart(event, row)} onClick={event => event.stopPropagation()}>
+					onDragStart={event => onCardDragStart(event, row)}
+					onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onCardContextMenu(event, row) }}
+					onClick={event => event.stopPropagation()}>
 					<EditableTitle title={row._title} file={row._file} manager={manager} onOpen={onOpenFile} className="nb-cal-card-title" />
 					{relativePath && <div className="nb-folder-path">{relativePath}</div>}
 				</div>

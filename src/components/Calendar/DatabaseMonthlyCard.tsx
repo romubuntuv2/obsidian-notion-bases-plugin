@@ -3,10 +3,11 @@ import { TFile } from 'obsidian'
 import { ColumnSchema, NoteRow, ViewConfig } from '../../types'
 import { DatabaseManager } from '../../database-manager'
 import { getCardConditionalStyle } from '../filter-utils'
-import EditableTitle from '../EditableTitle'
+import EditableTitle from '../EditableFields/EditableTitle'
+import EditableSelector from '../EditableFields/EditableSelector'
 import { stringifyScalar } from '../../value-utils'
 import { getRowTime } from './calendar-utils'
-import { CardDragHandler } from './calendar-types'
+import { CardContextMenuHandler, CardDragHandler } from './calendar-types'
 
 interface DatabaseMonthlyCardProps {
 	row: NoteRow
@@ -18,10 +19,11 @@ interface DatabaseMonthlyCardProps {
 	visibleColumns: ColumnSchema[]
 	onOpenFile: (file: TFile) => void
 	onCardDragStart: CardDragHandler
+	onContextMenu: CardContextMenuHandler
 }
 
 export function DatabaseMonthlyCard({ row, dbFile, manager, activeView, dateField, schema,
-	visibleColumns, onOpenFile, onCardDragStart }: DatabaseMonthlyCardProps) {
+	visibleColumns, onOpenFile, onCardDragStart, onContextMenu }: DatabaseMonthlyCardProps) {
 	const fileFolder = row._file.parent?.path ?? ''
 	const databaseFolder = dbFile.parent?.path ?? ''
 	const relativePath = activeView.includeSubfolders && fileFolder.length > databaseFolder.length
@@ -31,6 +33,7 @@ export function DatabaseMonthlyCard({ row, dbFile, manager, activeView, dateFiel
 
 	return <div className="nb-board-card nb-cal-monthly-card" style={cardStyle} draggable
 		onDragStart={event => { event.stopPropagation(); onCardDragStart(event, row) }}
+		onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onContextMenu(event, row) }}
 		onClick={event => event.stopPropagation()}>
 		<div className="nb-board-card-title">
 			{getRowTime(row, dateField.id) && <span className="nb-cal-time-badge">{getRowTime(row, dateField.id)}</span>}
@@ -40,6 +43,11 @@ export function DatabaseMonthlyCard({ row, dbFile, manager, activeView, dateFiel
 		{visibleColumns.length > 0 && <div className="nb-board-card-props">
 			{visibleColumns.map(column => {
 				const value = row[column.id]
+				const isSelector = column.type === 'select' || column.type === 'status' || column.type === 'multiselect'
+				if (isSelector) {
+					return <EditableSelector key={column.id} column={column} value={value}
+						file={row._file} manager={manager} inlineFields={row._inlineFields} />
+				}
 				if (value === null || value === undefined || stringifyScalar(value).trim() === '') return null
 				const display = Array.isArray(value) ? (value as string[]).join(', ') : stringifyScalar(value)
 				return <span key={column.id} className="nb-board-card-prop">

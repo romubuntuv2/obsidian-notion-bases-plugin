@@ -1,5 +1,5 @@
-import { DatabaseManager } from "../database-manager"
-import { useClickOrDoubleClick } from "../hooks/useClickOrDoubleClick"
+import { DatabaseManager } from "../../database-manager"
+import { useClickOrDoubleClick } from "../../hooks/useClickOrDoubleClick"
 import { Notice, TFile } from "obsidian"
 import { useEffect, useRef, useState } from "react"
 
