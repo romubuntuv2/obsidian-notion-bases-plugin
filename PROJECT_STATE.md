@@ -47,6 +47,11 @@ Stable invariants that must be preserved:
 
 - [x] Board/Kanban view exists.
 - [x] `EditableTitle` is shared by Board and Calendar cards.
+- [x] Board implementation split into focused files under `src/components/Board/`.
+- [x] Desktop HTML drag/drop for cards and columns.
+- [x] Desktop-native Obsidian context menu for card actions.
+- [x] Column limits, show more/less, filtering, conditional formatting, and virtualization.
+- [x] All Board mobile/touch interaction paths removed.
 - [ ] `EditableSelector` — not implemented.
 - [ ] `EditableDate` — not implemented.
 
@@ -79,6 +84,24 @@ Calendar/
 The extracted components receive explicit props. They do not close over
 `DatabaseCalendar` state, which makes their dependencies visible and keeps the entry
 component focused on orchestration.
+
+## Board component architecture
+
+`src/components/DatabaseBoard.tsx` is the stable public entry point and owns data
+loading, filtering/sorting, column derivation, view persistence, and vault mutations.
+
+```text
+Board/
+├── BoardToolbar.tsx
+├── BoardColumn.tsx
+├── BoardCard.tsx
+├── LazyBoardCard.tsx
+└── board-types.ts
+```
+
+The Board is desktop-only. Cards and columns use native HTML drag/drop; card actions use
+Obsidian's desktop context menu. No touch-drag, long-press, mobile toolbar, or BottomSheet
+code remains in the Board implementation.
 
 ## Calendar date behavior
 
@@ -124,15 +147,13 @@ The planned configurable week start should be stored on `ViewConfig`, for exampl
 
 ## Verification status
 
-On 2026-08-27 after the Calendar split:
+On 2026-08-27 after the Calendar and Board splits:
 
 - `npm run build`: passes.
-- `npm test`: 177 tests pass, but the suite exits with one failed import suite because
-  `EditableTitle.tsx` uses unresolved absolute imports (`database-manager` and
-  `hooks/useClickOrDoubleClick`) in the Vitest environment.
-- `npm run lint`: still reports a pre-existing error in `EditableTitle.tsx` where an
-  async handler is passed directly to `onBlur`; the Calendar extraction adds no lint
-  warnings.
+- `npm test`: all 8 test files and 189 tests pass.
+- targeted ESLint for Calendar, Board, and `EditableTitle`: passes.
+- `EditableTitle` now uses relative imports, a popout-safe `window.requestAnimationFrame`,
+  and a void-returning blur handler.
 
 ## Engineering preference
 
@@ -153,3 +174,9 @@ contracts, and preservation of known-working behavior over generalized abstracti
 - Established desktop Obsidian as the only maintained platform.
 - Removed Calendar mobile detection, mobile toolbar, BottomSheets, touch gestures,
   long-press actions, and mobile card-overflow behavior.
+- Split the 932-line `DatabaseBoard.tsx` into a 179-line orchestration component and
+  focused toolbar, column, card, virtualization, and type modules.
+- Removed Board mobile detection, touch drag/ghost handling, long-press logic, mobile
+  toolbar, and BottomSheets.
+- Replaced the shared card action sheet with Obsidian's native desktop context menu.
+- Fixed `EditableTitle` imports and event wrappers so the full test suite passes.

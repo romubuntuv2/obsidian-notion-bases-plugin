@@ -1,27 +1,17 @@
-import { TFile } from 'obsidian'
-import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Menu, TFile } from 'obsidian'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useApp } from '../context'
 import { DatabaseManager } from '../database-manager'
-import {
-	ColumnSchema, FilterOperator, NoteRow, SelectOption, ViewConfig,
-} from '../types'
-import {
-	ActiveFilter, applyFilters, applySorts,
-	getColumnIconStatic, getDefaultOperator,
-	getCardConditionalStyle,
-} from './filter-utils'
-import { FilterPillsRow } from './FilterPillsRow'
+import { FilterOperator, SelectOption, ViewConfig } from '../types'
+import { ActiveFilter, applyFilters, applySorts, getDefaultOperator } from './filter-utils'
 import { t } from '../i18n'
-import { useIsMobile } from '../hooks/useIsMobile'
 import { useDatabaseRows } from '../hooks/useDatabaseRows'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
-import { MobileToolbar, IconFields, IconSort, IconFilter, IconSubfolders } from './MobileToolbar'
-import { BottomSheet } from './BottomSheet'
-import { SaveIndicator } from './SaveIndicator'
-import { ConditionalFormatPanel } from './ConditionalFormatPanel'
 import { useSaveTracker } from '../hooks/useSaveTracker'
 import { stringifyScalar } from '../value-utils'
-import EditableTitle from './EditableTitle'
+import { BoardColumn } from './Board/BoardColumn'
+import { BoardToolbar } from './Board/BoardToolbar'
+import { BoardColumnData, DRAG_TYPE_CARD } from './Board/board-types'
 
 interface DatabaseBoardProps {
 	dbFile: TFile | null
@@ -30,106 +20,6 @@ interface DatabaseBoardProps {
 	onViewChange: (view: ViewConfig) => Promise<void>
 }
 
-const DRAG_TYPE_CARD = 'nb-card'
-const DRAG_TYPE_COLUMN = 'nb-column'
-const CARD_ESTIMATED_HEIGHT = 60
-const VIRTUALIZATION_THRESHOLD = 30
-
-function LazyCard({ children }: { children: React.ReactNode }) {
-	const ref = useRef<HTMLDivElement>(null)
-	const [visible, setVisible] = useState(false)
-	const heightRef = useRef(CARD_ESTIMATED_HEIGHT)
-
-	useEffect(() => {
-		const el = ref.current
-		if (!el) return
-		const observer = new IntersectionObserver(
-			([entry]) => {
-				if (entry.isIntersecting) {
-					setVisible(true)
-					observer.disconnect()
-				}
-			},
-			{ rootMargin: '200px 0px' }
-		)
-		observer.observe(el)
-		return () => observer.disconnect()
-	}, [])
-
-	useEffect(() => {
-		if (visible && ref.current) {
-			heightRef.current = ref.current.offsetHeight
-		}
-	}, [visible])
-
-	if (!visible) {
-		return <div ref={ref} style={{ minHeight: heightRef.current }} />
-	}
-
-	return <div ref={ref}>{children}</div>
-}
-
-interface BoardCardProps {
-	row: NoteRow
-	isMobile: boolean
-	visibleCols: ColumnSchema[]
-	dbFolderPath: string
-	includeSubfolders: boolean,
-	manager: DatabaseManager,
-	onOpen: (file: TFile) => void
-	onDragStart?: (e: React.DragEvent, filePath: string) => void
-	onTouchStart?: (e: React.TouchEvent, file: TFile) => void
-	onContextMenu?: (e: React.MouseEvent, file: TFile) => void
-	cardStyle?: React.CSSProperties
-}
-
-const BoardCard = React.memo(function BoardCard({
-	row, isMobile, visibleCols, dbFolderPath, includeSubfolders, manager,
-	onOpen, onDragStart, onTouchStart, onContextMenu, cardStyle,
-}: BoardCardProps) {
-	const fileFolder = row._file.parent?.path ?? ''
-	const relPath = includeSubfolders && fileFolder.length > dbFolderPath.length
-		? fileFolder.slice(dbFolderPath.length + 1) : ''
-
-	return (
-		<div
-			className="nb-board-card"
-			style={cardStyle}
-			draggable={!isMobile}
-			onDragStart={!isMobile ? e => {
-				e.stopPropagation()
-				onDragStart?.(e, row._file.path)
-			} : undefined}
-			onTouchStart={isMobile ? e => onTouchStart?.(e, row._file) : undefined}
-			onContextMenu={!isMobile ? e => { e.preventDefault(); onContextMenu?.(e, row._file) } : undefined}
-		>
-			<EditableTitle
-				title={row._title}
-				file={row._file}
-				onOpen={onOpen}
-				manager={manager}
-				className="nb-board-card-title"
-			/>
-			{relPath ? <div className="nb-folder-path">{relPath}</div> : null}
-			{visibleCols.length > 0 && (
-				<div className="nb-board-card-props">
-					{visibleCols.map(c => {
-						const val = row[c.id]
-						if (val === null || val === undefined || stringifyScalar(val).trim() === '') return null
-						const display = Array.isArray(val) ? (val as string[]).join(', ') : stringifyScalar(val)
-						return (
-							<span key={c.id} className="nb-board-card-prop">
-								<span className="nb-board-card-prop-name">{c.name}:</span>
-								<span className="nb-board-card-prop-value">{display}</span>
-							</span>
-						)
-					})}
-				</div>
-			)}
-		</div>
-	)
-})
-
 export function DatabaseBoard({ dbFile, manager, externalView, onViewChange }: DatabaseBoardProps) {
 	const app = useApp()
 	const { status: saveStatus, trackSave } = useSaveTracker()
@@ -137,27 +27,10 @@ export function DatabaseBoard({ dbFile, manager, externalView, onViewChange }: D
 		app, dbFile, manager, includeSubfolders: externalView.includeSubfolders, externalView,
 	})
 	const [activeView, setActiveView] = useState<ViewConfig>(externalView)
-	// Persistidos na config da view (issue #43) — não usar useState local
-	const hideEmpty = activeView.boardHideEmpty ?? false
-	const hideNoValue = activeView.boardHideNoValue ?? false
 	const [editingLimit, setEditingLimit] = useState<string | null>(null)
 	const [expandedColumns, setExpandedColumns] = useState<Set<string>>(new Set())
-	const [fieldsMenuOpen, setFieldsMenuOpen] = useState(false)
-	const [groupByMenuOpen, setGroupByMenuOpen] = useState(false)
-	const [filterMenuOpen, setFilterMenuOpen] = useState(false)
-	const [cfPanelOpen, setCfPanelOpen] = useState(false)
-	// card drag
 	const [cardDragOver, setCardDragOver] = useState<string | null>(null)
-	// column drag
-	const [colDragOver, setColDragOver] = useState<string | null>(null)
-	// context menu state
-	const [contextMenuFile, setContextMenuFile] = useState<TFile | null>(null)
-
-	const fieldsMenuRef = useRef<HTMLDivElement>(null)
-	const groupByMenuRef = useRef<HTMLDivElement>(null)
-	const filterMenuRef = useRef<HTMLDivElement>(null)
-	const cfPanelRef = useRef<HTMLDivElement>(null)
-	const mobileActionBarRef = useRef<HTMLDivElement>(null)
+	const [columnDragOver, setColumnDragOver] = useState<string | null>(null)
 
 	useEffect(() => { setActiveView(externalView) }, [externalView.id])
 
@@ -166,767 +39,141 @@ export function DatabaseBoard({ dbFile, manager, externalView, onViewChange }: D
 		await onViewChange(updated)
 	}, [onViewChange])
 
-	// ── Close menus on outside click ─────────────────────────────────────────
-
-	useEffect(() => {
-		if (!fieldsMenuOpen) return
-		const h = (e: MouseEvent) => {
-			if (mobileActionBarRef.current?.contains(e.target as Node)) return
-			if (fieldsMenuRef.current && !fieldsMenuRef.current.contains(e.target as Node)) setFieldsMenuOpen(false)
-		}
-		activeDocument.addEventListener('mousedown', h); return () => activeDocument.removeEventListener('mousedown', h)
-	}, [fieldsMenuOpen])
-
-	useEffect(() => {
-		if (!groupByMenuOpen) return
-		const h = (e: MouseEvent) => {
-			if (mobileActionBarRef.current?.contains(e.target as Node)) return
-			if (groupByMenuRef.current && !groupByMenuRef.current.contains(e.target as Node)) setGroupByMenuOpen(false)
-		}
-		activeDocument.addEventListener('mousedown', h); return () => activeDocument.removeEventListener('mousedown', h)
-	}, [groupByMenuOpen])
-
-	useEffect(() => {
-		if (!filterMenuOpen) return
-		const h = (e: MouseEvent) => {
-			if (mobileActionBarRef.current?.contains(e.target as Node)) return
-			if (filterMenuRef.current && !filterMenuRef.current.contains(e.target as Node)) setFilterMenuOpen(false)
-		}
-		activeDocument.addEventListener('mousedown', h); return () => activeDocument.removeEventListener('mousedown', h)
-	}, [filterMenuOpen])
-
-	useEffect(() => {
-		if (!cfPanelOpen) return
-		const h = (e: MouseEvent) => {
-			if (cfPanelRef.current && !cfPanelRef.current.contains(e.target as Node)) setCfPanelOpen(false)
-		}
-		activeDocument.addEventListener('mousedown', h); return () => activeDocument.removeEventListener('mousedown', h)
-	}, [cfPanelOpen])
-
-	// ── Groupable columns ─────────────────────────────────────────────────────
-
 	const groupableColumns = useMemo(
-		() => config.schema.filter(c => c.type === 'select' || c.type === 'status'),
+		() => config.schema.filter(column => column.type === 'select' || column.type === 'status'),
 		[config.schema]
 	)
-
-	const groupByCol = useMemo(
-		() => config.schema.find(c => c.id === activeView.groupByColumnId) ?? groupableColumns[0] ?? null,
+	const groupByColumn = useMemo(
+		() => config.schema.find(column => column.id === activeView.groupByColumnId) ?? groupableColumns[0] ?? null,
 		[config.schema, activeView.groupByColumnId, groupableColumns]
 	)
-
-	// ── Derived data ─────────────────────────────────────────────────────────
-
 	const debouncedFilters = useDebouncedValue(activeFilters, 200)
 	const filteredRows = useMemo(() => applyFilters(rows, debouncedFilters), [rows, debouncedFilters])
 	const sortedRows = useMemo(() => applySorts(filteredRows, activeView.sorts), [filteredRows, activeView.sorts])
+	const visibleColumns = useMemo(() => config.schema.filter(column =>
+		column.id !== groupByColumn?.id && column.type !== 'title' && column.visible
+		&& !activeView.hiddenColumns.includes(column.id)
+	), [config.schema, activeView.hiddenColumns, groupByColumn])
 
-	const visibleCols = useMemo(
-		() => config.schema.filter(col =>
-			col.id !== groupByCol?.id &&
-			col.type !== 'title' &&
-			col.visible &&
-			!activeView.hiddenColumns.includes(col.id)
-		),
-		[config.schema, activeView.hiddenColumns, groupByCol]
-	)
-
-	const DEFAULT_STATUS_OPTIONS: SelectOption[] = [
+	const defaultStatusOptions = useMemo<SelectOption[]>(() => [
 		{ value: t('status_not_started'), color: '#9E9E9E' },
 		{ value: t('status_in_progress'), color: '#2196F3' },
 		{ value: t('status_done'), color: '#4CAF50' },
 		{ value: t('status_cancelled'), color: '#F44336' },
-	]
+	], [])
 
-	const columns = useMemo(() => {
-		if (!groupByCol) return []
-		const options = (groupByCol.type === 'status' && !groupByCol.options?.length)
-			? DEFAULT_STATUS_OPTIONS
-			: (groupByCol.options ?? [])
-		const all = [
-			...options.map(opt => ({
-				value: opt.value,
-				label: opt.value,
-				color: opt.color,
-				rows: sortedRows.filter(r => r[groupByCol.id] === opt.value),
-			})),
-			{
-				value: '',
-				label: t('no_value'),
-				color: undefined,
-				rows: sortedRows.filter(r => {
-					const v = r[groupByCol.id]
-					return v === null || v === undefined || stringifyScalar(v).trim() === ''
-				}),
-			},
+	const columns = useMemo<BoardColumnData[]>(() => {
+		if (!groupByColumn) return []
+		const options = groupByColumn.type === 'status' && !groupByColumn.options?.length
+			? defaultStatusOptions : (groupByColumn.options ?? [])
+		const available: BoardColumnData[] = [
+			...options.map(option => ({ value: option.value, label: option.value, color: option.color,
+				rows: sortedRows.filter(row => row[groupByColumn.id] === option.value) })),
+			{ value: '', label: t('no_value'), rows: sortedRows.filter(row => {
+				const value = row[groupByColumn.id]
+				return value === null || value === undefined || stringifyScalar(value).trim() === ''
+			}) },
 		]
-		// Apply saved column order
 		const order = activeView.boardColumnOrder
-		let ordered = all
-		if (order && order.length > 0) {
-			const inOrder = order.flatMap(v => { const c = all.find(x => x.value === v); return c ? [c] : [] })
-			const rest = all.filter(x => !order.includes(x.value))
-			ordered = [...inOrder, ...rest]
-		}
-		let result = hideEmpty ? ordered.filter(c => c.rows.length > 0) : ordered
-		if (hideNoValue) result = result.filter(c => c.value !== '')
-		return result
-	}, [groupByCol, sortedRows, hideEmpty, hideNoValue, activeView.boardColumnOrder])
-
-	// ── Actions ───────────────────────────────────────────────────────────────
+		const ordered = order?.length
+			? [...order.flatMap(value => { const column = available.find(item => item.value === value); return column ? [column] : [] }),
+				...available.filter(column => !order.includes(column.value))]
+			: available
+		return ordered.filter(column => !(activeView.boardHideEmpty && column.rows.length === 0)
+			&& !(activeView.boardHideNoValue && column.value === ''))
+	}, [groupByColumn, sortedRows, defaultStatusOptions, activeView.boardColumnOrder,
+		activeView.boardHideEmpty, activeView.boardHideNoValue])
 
 	const moveCard = useCallback(async (rowPath: string, targetValue: string) => {
-		if (!dbFile || !groupByCol) return
+		if (!dbFile || !groupByColumn) return
 		const file = app.vault.getFileByPath(rowPath)
 		if (!file) return
-		await trackSave(app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-			if (targetValue === '') {
-				delete fm[groupByCol.id]
-			} else {
-				fm[groupByCol.id] = targetValue
-			}
+		await trackSave(app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
+			if (targetValue === '') delete frontmatter[groupByColumn.id]
+			else frontmatter[groupByColumn.id] = targetValue
 		}))
-	}, [app, dbFile, groupByCol, trackSave])
+	}, [app, dbFile, groupByColumn, trackSave])
 
 	const moveColumn = useCallback(async (fromValue: string, toValue: string) => {
 		if (fromValue === toValue) return
-		const currentOrder = columns.map(c => c.value)
-		const fromIdx = currentOrder.indexOf(fromValue)
-		const toIdx = currentOrder.indexOf(toValue)
-		if (fromIdx === -1 || toIdx === -1) return
-		const next = [...currentOrder]
-		next.splice(fromIdx, 1)
-		next.splice(toIdx, 0, fromValue)
+		const order = columns.map(column => column.value)
+		const fromIndex = order.indexOf(fromValue)
+		const toIndex = order.indexOf(toValue)
+		if (fromIndex === -1 || toIndex === -1) return
+		const next = [...order]
+		next.splice(fromIndex, 1)
+		next.splice(toIndex, 0, fromValue)
 		await saveView({ ...activeView, boardColumnOrder: next })
 	}, [columns, activeView, saveView])
 
-	// Touch drag for mobile — registers listeners directly on element with { passive: false }
-	const boardRef = useRef<HTMLDivElement>(null)
-	const moveCardRef = useRef(moveCard)
-	moveCardRef.current = moveCard
-	const moveColumnRef = useRef(moveColumn)
-	moveColumnRef.current = moveColumn
-
-	const createGhost = (el: HTMLElement, x: number, y: number): HTMLElement => {
-		const ghost = el.cloneNode(true) as HTMLElement
-		const rect = el.getBoundingClientRect()
-		ghost.style.cssText = `position:fixed;z-index:9999;pointer-events:none;opacity:0.85;width:${rect.width}px;transform:rotate(2deg);box-shadow:0 8px 24px rgba(0,0,0,0.2);`
-		ghost.style.left = `${x - rect.width / 2}px`
-		ghost.style.top = `${y - 20}px`
-		activeDocument.body.appendChild(ghost)
-		return ghost
-	}
-
-	const handleCardTouchStart = useCallback((e: React.TouchEvent, rowFile: TFile) => {
-		const touch = e.touches[0]
-		const el = e.currentTarget as HTMLElement
-		let active = false, overColKey: string | null = null, ghost: HTMLElement | null = null
-		let scrollInterval: number | null = null
-		let longPressHandled = false
-
-		const longPressTimer = window.setTimeout(() => {
-			longPressHandled = true
-			cleanup()
-			setContextMenuFile(rowFile)
-		}, 500)
-
-		const startEdgeScroll = (clientX: number) => {
-			const board = boardRef.current
-			if (!board) return
-			const boardRect = board.getBoundingClientRect()
-			const edgeZone = 50
-			const speed = 8
-			const nearLeft = clientX - boardRect.left < edgeZone
-			const nearRight = boardRect.right - clientX < edgeZone
-
-			if (!nearLeft && !nearRight) {
-				if (scrollInterval) { window.clearInterval(scrollInterval); scrollInterval = null }
-				return
-			}
-			if (scrollInterval) return
-			const dir = nearRight ? 1 : -1
-			scrollInterval = window.setInterval(() => {
-				board.scrollLeft += dir * speed
-			}, 16)
-		}
-
-		const stopEdgeScroll = () => {
-			if (scrollInterval) { window.clearInterval(scrollInterval); scrollInterval = null }
-		}
-
-		const cleanup = () => {
-			el.removeEventListener('touchmove', onMove)
-			el.removeEventListener('touchend', onEnd)
-			el.removeEventListener('touchcancel', onEnd)
-		}
-
-		const onMove = (ev: TouchEvent) => {
-			const t = ev.touches[0]
-			if (!active && Math.abs(t.clientX - touch.clientX) < 12 && Math.abs(t.clientY - touch.clientY) < 12) return
-			window.clearTimeout(longPressTimer)
-			ev.preventDefault()
-			ev.stopPropagation()
-			if (!active) {
-				active = true
-				el.classList.add('nb-touch-drag-source')
-				boardRef.current?.classList.add('nb-board--dragging')
-				ghost = createGhost(el, t.clientX, t.clientY)
-			}
-			if (ghost) {
-				ghost.style.left = `${t.clientX - ghost.offsetWidth / 2}px`
-				ghost.style.top = `${t.clientY - 20}px`
-			}
-			el.classList.add('nb-touch-drag-hidden')
-			const target = activeDocument.elementFromPoint(t.clientX, t.clientY)
-			el.classList.remove('nb-touch-drag-hidden')
-			el.classList.add('nb-touch-drag-source')
-			const col = target?.closest('.nb-board-column') as HTMLElement | null
-			overColKey = col?.dataset.colKey ?? null
-			setCardDragOver(overColKey)
-			startEdgeScroll(t.clientX)
-		}
-
-		const onEnd = () => {
-			window.clearTimeout(longPressTimer)
-			stopEdgeScroll()
-			boardRef.current?.classList.remove('nb-board--dragging')
-			el.classList.remove('nb-touch-drag-source', 'nb-touch-drag-hidden')
-			ghost?.remove()
-			if (!longPressHandled && active && overColKey !== null) {
-				void moveCardRef.current(rowFile.path, overColKey)
-			}
-			setCardDragOver(null)
-			cleanup()
-		}
-
-		el.addEventListener('touchmove', onMove, { passive: false })
-		el.addEventListener('touchend', onEnd)
-		el.addEventListener('touchcancel', onEnd)
-	}, [])
-
-	const handleColumnTouchStart = useCallback((e: React.TouchEvent, colValue: string) => {
-		const touch = e.touches[0]
-		const el = e.currentTarget.closest('.nb-board-column') as HTMLElement
-		if (!el) return
-		let active = false, overColKey: string | null = null, ghost: HTMLElement | null = null
-		let scrollInterval: number | null = null
-
-		const startEdgeScroll = (clientX: number) => {
-			const board = boardRef.current
-			if (!board) return
-			const boardRect = board.getBoundingClientRect()
-			const edgeZone = 50
-			const speed = 8
-			const nearLeft = clientX - boardRect.left < edgeZone
-			const nearRight = boardRect.right - clientX < edgeZone
-
-			if (!nearLeft && !nearRight) {
-				if (scrollInterval) { window.clearInterval(scrollInterval); scrollInterval = null }
-				return
-			}
-			if (scrollInterval) return
-			const dir = nearRight ? 1 : -1
-			scrollInterval = window.setInterval(() => {
-				board.scrollLeft += dir * speed
-			}, 16)
-		}
-
-		const stopEdgeScroll = () => {
-			if (scrollInterval) { window.clearInterval(scrollInterval); scrollInterval = null }
-		}
-
-		const onMove = (ev: TouchEvent) => {
-			const t = ev.touches[0]
-			if (!active && Math.abs(t.clientX - touch.clientX) < 12 && Math.abs(t.clientY - touch.clientY) < 12) return
-			ev.preventDefault()
-			ev.stopPropagation()
-			if (!active) {
-				active = true
-				el.classList.add('nb-touch-drag-source')
-				boardRef.current?.classList.add('nb-board--dragging')
-				ghost = createGhost(el, t.clientX, t.clientY)
-			}
-			if (ghost) {
-				ghost.style.left = `${t.clientX - ghost.offsetWidth / 2}px`
-				ghost.style.top = `${t.clientY - 20}px`
-			}
-			el.classList.add('nb-touch-drag-hidden')
-			const target = activeDocument.elementFromPoint(t.clientX, t.clientY)
-			el.classList.remove('nb-touch-drag-hidden')
-			el.classList.add('nb-touch-drag-source')
-			const col = target?.closest('.nb-board-column') as HTMLElement | null
-			overColKey = col?.dataset.colKey ?? null
-			setColDragOver(overColKey)
-			startEdgeScroll(t.clientX)
-		}
-
-		const onEnd = () => {
-			stopEdgeScroll()
-			boardRef.current?.classList.remove('nb-board--dragging')
-			el.classList.remove('nb-touch-drag-source', 'nb-touch-drag-hidden')
-			ghost?.remove()
-			if (active && overColKey !== null) {
-				void moveColumnRef.current(colValue, overColKey)
-			}
-			setColDragOver(null)
-			el.removeEventListener('touchmove', onMove)
-			el.removeEventListener('touchend', onEnd)
-			el.removeEventListener('touchcancel', onEnd)
-		}
-
-		el.addEventListener('touchmove', onMove, { passive: false })
-		el.addEventListener('touchend', onEnd)
-		el.addEventListener('touchcancel', onEnd)
-	}, [])
-
-
 	const addCardToColumn = useCallback(async (columnValue: string) => {
-		if (!dbFile || !groupByCol) return
+		if (!dbFile || !groupByColumn) return
 		const newFile = await manager.createNoteWithTemplate(dbFile, undefined, externalView)
 		if (columnValue !== '') {
-			await trackSave(app.fileManager.processFrontMatter(newFile, (fm: Record<string, unknown>) => {
-				fm[groupByCol.id] = columnValue
+			await trackSave(app.fileManager.processFrontMatter(newFile, (frontmatter: Record<string, unknown>) => {
+				frontmatter[groupByColumn.id] = columnValue
 			}))
 		}
-	}, [app, dbFile, manager, groupByCol, trackSave])
+	}, [app, dbFile, manager, groupByColumn, externalView, trackSave])
 
 	const saveActivePills = useCallback(async (filters: ActiveFilter[]) => {
-		const pills = filters.map(f => ({ id: f.id, columnId: f.columnId, operator: f.operator, value: f.value, conjunction: f.conjunction }))
+		const pills = filters.map(filter => ({ id: filter.id, columnId: filter.columnId,
+			operator: filter.operator, value: filter.value, conjunction: filter.conjunction }))
 		await saveView({ ...activeView, activePills: pills })
 	}, [saveView, activeView])
-
 	const addFilter = (columnId: string, columnName: string, icon: string, columnType: string) => {
-		const next: ActiveFilter[] = [...activeFilters, { id: crypto.randomUUID(), columnId, columnName, columnType, icon, operator: getDefaultOperator(columnType), value: '', conjunction: 'and' }]
-		setActiveFilters(next); void saveActivePills(next); setFilterMenuOpen(false)
+		const next: ActiveFilter[] = [...activeFilters, { id: crypto.randomUUID(), columnId,
+			columnName, columnType, icon, operator: getDefaultOperator(columnType), value: '', conjunction: 'and' }]
+		setActiveFilters(next); void saveActivePills(next)
 	}
-	const removeFilter = (id: string) => { const next = activeFilters.filter(f => f.id !== id); setActiveFilters(next); void saveActivePills(next) }
-	const updateFilter = (id: string, operator: FilterOperator, value: string) => { const next = activeFilters.map(f => f.id === id ? { ...f, operator, value } : f); setActiveFilters(next); void saveActivePills(next) }
-	const toggleConjunction = (id: string) => { const next = activeFilters.map(f => f.id === id ? { ...f, conjunction: f.conjunction === 'and' ? 'or' as const : 'and' as const } : f); setActiveFilters(next); void saveActivePills(next) }
-
+	const removeFilter = (id: string) => { const next = activeFilters.filter(filter => filter.id !== id); setActiveFilters(next); void saveActivePills(next) }
+	const updateFilter = (id: string, operator: FilterOperator, value: string) => { const next = activeFilters.map(filter => filter.id === id ? { ...filter, operator, value } : filter); setActiveFilters(next); void saveActivePills(next) }
+	const toggleConjunction = (id: string) => { const next = activeFilters.map(filter => filter.id === id ? { ...filter, conjunction: filter.conjunction === 'and' ? 'or' as const : 'and' as const } : filter); setActiveFilters(next); void saveActivePills(next) }
 	const toggleFieldVisibility = useCallback(async (fieldId: string) => {
-		const hidden = activeView.hiddenColumns.includes(fieldId)
+		const hiddenColumns = activeView.hiddenColumns.includes(fieldId)
 			? activeView.hiddenColumns.filter(id => id !== fieldId)
 			: [...activeView.hiddenColumns, fieldId]
-		await saveView({ ...activeView, hiddenColumns: hidden })
+		await saveView({ ...activeView, hiddenColumns })
 	}, [activeView, saveView])
 
-	// ── Render ─────────────────────────────────────────────────────────────────
-
-	const isMobile = useIsMobile()
-
-
-
-	const dbFolderPath = dbFile?.parent?.path ?? ''
-	const openFile = useCallback((file: TFile) => {
-		void app.workspace.getLeaf().openFile(file)
-	}, [app])
-	const handleCardDragStart = useCallback((e: React.DragEvent, filePath: string) => {
-		e.dataTransfer.effectAllowed = 'move'
-		e.dataTransfer.setData('nb-drag-type', DRAG_TYPE_CARD)
-		e.dataTransfer.setData('nb-row-path', filePath)
-		e.dataTransfer.setData(DRAG_TYPE_CARD, '')
+	const openFile = useCallback((file: TFile) => { void app.workspace.getLeaf().openFile(file) }, [app])
+	const handleCardDragStart = useCallback((event: React.DragEvent, filePath: string) => {
+		event.dataTransfer.effectAllowed = 'move'
+		event.dataTransfer.setData('nb-drag-type', DRAG_TYPE_CARD)
+		event.dataTransfer.setData('nb-row-path', filePath)
+		event.dataTransfer.setData(DRAG_TYPE_CARD, '')
 	}, [])
-	const handleCardContextMenu = useCallback((_e: React.MouseEvent, file: TFile) => { setContextMenuFile(file) }, [])
+	const handleCardContextMenu = useCallback((event: React.MouseEvent, file: TFile) => {
+		const menu = new Menu()
+		menu.addItem(item => item.setTitle(t('open_note')).setIcon('file').onClick(() => { void app.workspace.getLeaf().openFile(file) }))
+		menu.addItem(item => item.setTitle(t('duplicate_note')).setIcon('copy').onClick(() => { void manager.duplicateNotes([file]) }))
+		menu.addSeparator()
+		menu.addItem(item => item.setTitle(t('delete_note')).setIcon('trash').onClick(() => { void manager.deleteNotes([file]) }))
+		menu.showAtMouseEvent(event.nativeEvent)
+	}, [app, manager])
 
 	if (!dbFile) return <div className="nb-empty-state"><p>{t('no_database_open')}</p></div>
 	if (loading) return <div className="nb-loading">{t('loading')}</div>
+	if (groupableColumns.length === 0) return <div className="nb-empty-state"><p>{t('board_no_select_col')}</p><p>{t('board_add_select_hint')}</p></div>
 
-	if (groupableColumns.length === 0) {
-		return (
-			<div className="nb-empty-state">
-				<p>{t('board_no_select_col')}</p>
-				<p>{t('board_add_select_hint')}</p>
-			</div>
-		)
-	}
-
-	const closeMobileMenus = (except?: string) => {
-		if (except !== 'fields') setFieldsMenuOpen(false)
-		if (except !== 'groupby') setGroupByMenuOpen(false)
-		if (except !== 'filter') setFilterMenuOpen(false)
-	}
-
-	const toolbarContent = isMobile ? (
-		<MobileToolbar
-			actionBarRef={mobileActionBarRef}
-			actions={[
-				{ id: 'fields', label: t('fields'), icon: <IconFields />, active: fieldsMenuOpen, onClick: () => { closeMobileMenus('fields'); setFieldsMenuOpen(v => !v) } },
-				{ id: 'groupby', label: t('group_by'), icon: <IconSort />, active: groupByMenuOpen, onClick: () => { closeMobileMenus('groupby'); setGroupByMenuOpen(v => !v) } },
-				{ id: 'subfolders', label: t('tooltip_include_subfolders'), icon: <IconSubfolders />, active: !!activeView.includeSubfolders, onClick: () => { closeMobileMenus(); void saveView({ ...activeView, includeSubfolders: !activeView.includeSubfolders }) } },
-				{ id: 'filter', label: t('filter'), icon: <IconFilter />, active: filterMenuOpen, badge: activeFilters.length || undefined, onClick: () => { closeMobileMenus('filter'); setFilterMenuOpen(v => !v) } },
-			]}
-			rowCount={filteredRows.length}
-			rowCountLabel={filteredRows.length === 1 ? t('item_singular').toLowerCase() : t('item_plural').toLowerCase()}
-			filters={activeFilters}
-			onFilterUpdate={updateFilter}
-			onFilterRemove={removeFilter}
-			onConjunctionToggle={toggleConjunction}
-		>
-			<BottomSheet open={fieldsMenuOpen} onClose={() => setFieldsMenuOpen(false)} title={t('fields_in_card')}>
-				{config.schema.filter(c => c.id !== groupByCol?.id && c.type !== 'title').map(col => (
-					<label key={col.id} className="nb-field-row">
-						<input type="checkbox" className="nb-field-checkbox" checked={col.visible && !activeView.hiddenColumns.includes(col.id)} onChange={() => { void toggleFieldVisibility(col.id) }} />
-						<span className="nb-field-icon">{getColumnIconStatic(col.type)}</span>
-						<span className="nb-field-name">{col.name}</span>
-					</label>
-				))}
-			</BottomSheet>
-			<BottomSheet open={groupByMenuOpen} onClose={() => setGroupByMenuOpen(false)} title={t('group_by')}>
-				{groupableColumns.map(col => (
-					<button
-						key={col.id}
-						className={`nb-menu-item${activeView.groupByColumnId === col.id ? ' nb-menu-item--active' : ''}`}
-						onClick={() => { void saveView({ ...activeView, groupByColumnId: col.id }); setGroupByMenuOpen(false) }}
-					>
-						<span className="nb-menu-item-icon">{getColumnIconStatic(col.type)}</span>
-						<span>{col.name}</span>
-					</button>
-				))}
-			</BottomSheet>
-			<BottomSheet open={filterMenuOpen} onClose={() => setFilterMenuOpen(false)} title={t('filter')}>
-				<button className="nb-menu-item" onClick={() => addFilter('_title', t('name_column'), '📄', 'title')}>
-					<span className="nb-menu-item-icon">📄</span><span>{t('name_column')}</span>
-				</button>
-				{config.schema.map(col => (
-					<button key={col.id} className="nb-menu-item" onClick={() => addFilter(col.id, col.name, getColumnIconStatic(col.type), col.type)}>
-						<span className="nb-menu-item-icon">{getColumnIconStatic(col.type)}</span>
-						<span>{col.name}</span>
-					</button>
-				))}
-			</BottomSheet>
-			<div className="nb-mobile-toggles-row">
-				<label className="nb-mobile-toggle">
-					<input type="checkbox" checked={hideEmpty} onChange={e => { void saveView({ ...activeView, boardHideEmpty: e.target.checked }) }} />
-					<span>{t('hide_empty_cols')}</span>
-				</label>
-				<label className="nb-mobile-toggle">
-					<input type="checkbox" checked={hideNoValue} onChange={e => { void saveView({ ...activeView, boardHideNoValue: e.target.checked }) }} />
-					<span>{t('hide_no_value_cols')}</span>
-				</label>
-			</div>
-		</MobileToolbar>
-	) : (
-		<>
-			{/* Desktop Toolbar */}
-			<div className="nb-toolbar">
-				{/* Campos */}
-				<div className="nb-fields-menu-wrapper" ref={fieldsMenuRef}>
-					<button className={`nb-toolbar-btn${fieldsMenuOpen ? ' nb-toolbar-btn--active' : ''}`} onClick={() => setFieldsMenuOpen(v => !v)}>
-						{t('fields')}
-					</button>
-					{fieldsMenuOpen && (
-						<div className="nb-fields-dropdown">
-							<div className="nb-fields-dropdown-label">{t('fields_in_card')}</div>
-							{config.schema.filter(c => c.id !== groupByCol?.id && c.type !== 'title').map(col => (
-								<label key={col.id} className="nb-field-row">
-									<input type="checkbox" className="nb-field-checkbox" checked={col.visible && !activeView.hiddenColumns.includes(col.id)} onChange={() => { void toggleFieldVisibility(col.id) }} />
-									<span className="nb-field-icon">{getColumnIconStatic(col.type)}</span>
-									<span className="nb-field-name">{col.name}</span>
-								</label>
-							))}
-						</div>
-					)}
-				</div>
-
-				{/* Agrupar por */}
-				<div className="nb-fields-menu-wrapper" ref={groupByMenuRef}>
-					<button className={`nb-toolbar-btn${groupByMenuOpen ? ' nb-toolbar-btn--active' : ''}`} onClick={() => setGroupByMenuOpen(v => !v)}>
-						{t('group_by')}: <strong>{groupByCol?.name ?? '—'}</strong>
-					</button>
-					{groupByMenuOpen && (
-						<div className="nb-fields-dropdown">
-							<div className="nb-fields-dropdown-label">{t('group_by_label')}</div>
-							{groupableColumns.map(col => (
-								<button
-									key={col.id}
-									className={`nb-menu-item${activeView.groupByColumnId === col.id ? ' nb-menu-item--active' : ''}`}
-									onClick={() => { void saveView({ ...activeView, groupByColumnId: col.id }); setGroupByMenuOpen(false) }}
-								>
-									<span className="nb-menu-item-icon">{getColumnIconStatic(col.type)}</span>
-									<span>{col.name}</span>
-								</button>
-							))}
-						</div>
-					)}
-				</div>
-
-				{/* Ocultar vazias */}
-				<label className="nb-toolbar-btn nb-toolbar-toggle">
-					<input type="checkbox" checked={hideEmpty} onChange={e => { void saveView({ ...activeView, boardHideEmpty: e.target.checked }) }} />
-					{t('hide_empty_cols')}
-				</label>
-
-				{/* Ocultar sem valor */}
-				<label className="nb-toolbar-btn nb-toolbar-toggle">
-					<input type="checkbox" checked={hideNoValue} onChange={e => { void saveView({ ...activeView, boardHideNoValue: e.target.checked }) }} />
-					{t('hide_no_value_cols')}
-				</label>
-
-				{/* Include subfolders */}
-				<button
-					className={`nb-toolbar-btn nb-toolbar-btn--icon nb-subfolder-toggle ${activeView.includeSubfolders ? 'nb-toolbar-btn--active' : ''}`}
-					onClick={() => { void saveView({ ...activeView, includeSubfolders: !activeView.includeSubfolders }) }}
-					title={t('tooltip_include_subfolders')}
-				>
-					<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-						<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-						<line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/>
-					</svg>
-				</button>
-
-				{/* Row count */}
-				<span className="nb-row-count">{filteredRows.length} {filteredRows.length === 1 ? t('item_singular').toLowerCase() : t('item_plural').toLowerCase()}</span>
-				<SaveIndicator status={saveStatus} />
-
-				{/* Filtros */}
-				<div className="nb-fields-menu-wrapper" ref={filterMenuRef} style={{ marginLeft: 'auto' }}>
-					<button className={`nb-toolbar-btn nb-toolbar-btn--icon${filterMenuOpen ? ' nb-toolbar-btn--active' : ''}`} onClick={() => setFilterMenuOpen(v => !v)} title={t('filters')}>
-						<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-							<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
-						</svg>
-						{activeFilters.length > 0 && <span className="nb-hidden-badge">{activeFilters.length}</span>}
-					</button>
-					{filterMenuOpen && (
-						<div className="nb-fields-dropdown nb-filter-menu-dropdown">
-							<div className="nb-fields-dropdown-label">{t('filter_by')}</div>
-							<button className="nb-menu-item" onClick={() => addFilter('_title', t('name_column'), '📄', 'title')}>
-								<span className="nb-menu-item-icon">📄</span><span>{t('name_column')}</span>
-							</button>
-							{config.schema.map(col => (
-								<button key={col.id} className="nb-menu-item" onClick={() => addFilter(col.id, col.name, getColumnIconStatic(col.type), col.type)}>
-									<span className="nb-menu-item-icon">{getColumnIconStatic(col.type)}</span>
-									<span>{col.name}</span>
-								</button>
-							))}
-						</div>
-					)}
-				</div>
-
-				{/* Conditional formatting */}
-				<div className="nb-fields-menu-wrapper" ref={cfPanelRef}>
-					<button
-						className={`nb-toolbar-btn nb-toolbar-btn--icon${(activeView.conditionalFormats?.length ?? 0) > 0 ? ' nb-toolbar-btn--active' : ''}`}
-						onClick={() => setCfPanelOpen(v => !v)}
-						title={t('conditional_formatting')}
-					>
-						<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-							<rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18" /><path d="M3 15h18" /><path d="M9 3v18" />
-						</svg>
-						{(activeView.conditionalFormats?.length ?? 0) > 0 && <span className="nb-hidden-badge">{activeView.conditionalFormats!.length}</span>}
-					</button>
-					{cfPanelOpen && (
-						<ConditionalFormatPanel
-							rules={activeView.conditionalFormats ?? []}
-							schema={config.schema}
-							onChange={rules => { void saveView({ ...activeView, conditionalFormats: rules }) }}
-							onClose={() => setCfPanelOpen(false)}
-						/>
-					)}
-				</div>
-			</div>
-
-			{/* Filter pills */}
-			<FilterPillsRow
-				activeFilters={activeFilters}
-				schema={config.schema}
-				onUpdate={updateFilter}
-				onRemove={removeFilter}
-				onToggleConjunction={toggleConjunction}
-				collapsed={!!activeView.filtersCollapsed}
-				onToggleCollapsed={() => { void saveView({ ...activeView, filtersCollapsed: !activeView.filtersCollapsed }) }}
-			/>
-		</>
-	)
-
-	return (
-		<div className="nb-container">
-			{toolbarContent}
-
-			{/* Board */}
-			<div className="nb-board" ref={boardRef}>
-				{columns.map(col => {
-					const key = col.value || '__no_value__'
-					const isCardOver = cardDragOver === key
-					const isColOver = colDragOver === key
-					return (
-						<div
-							key={key}
-							data-col-key={key}
-							className={`nb-board-column${isCardOver ? ' nb-board-column--card-over' : ''}${isColOver ? ' nb-board-column--col-over' : ''}${(() => { const lim = activeView.boardColumnLimits?.[col.value]; return lim && lim > 0 && col.rows.length >= lim ? ' nb-board-column--over-limit' : '' })()}`}
-							onDragOver={e => {
-								e.preventDefault()
-								const type = e.dataTransfer.types.includes(DRAG_TYPE_CARD) ? DRAG_TYPE_CARD : DRAG_TYPE_COLUMN
-								if (type === DRAG_TYPE_CARD) setCardDragOver(key)
-								else setColDragOver(key)
-							}}
-							onDragLeave={e => {
-								const related = e.relatedTarget as Node | null
-								if (!e.currentTarget.contains(related)) {
-									setCardDragOver(null)
-									setColDragOver(null)
-								}
-							}}
-							// eslint-disable-next-line @typescript-eslint/no-misused-promises -- async handler required for drag-and-drop file operations
-							onDrop={async e => {
-								e.preventDefault()
-								setCardDragOver(null)
-								setColDragOver(null)
-								const dragType = e.dataTransfer.getData('nb-drag-type')
-								if (dragType === DRAG_TYPE_CARD) {
-									const rowPath = e.dataTransfer.getData('nb-row-path')
-									if (rowPath) await moveCard(rowPath, col.value)
-								} else if (dragType === DRAG_TYPE_COLUMN) {
-									const fromValue = e.dataTransfer.getData('nb-col-value')
-									if (fromValue !== undefined) await moveColumn(fromValue, col.value)
-								}
-							}}
-						>
-							{/* Column header with drag handle */}
-							<div
-								className="nb-board-column-header"
-								draggable={!isMobile}
-								onDragStart={!isMobile ? e => {
-									e.stopPropagation()
-									e.dataTransfer.effectAllowed = 'move'
-									e.dataTransfer.setData('nb-drag-type', DRAG_TYPE_COLUMN)
-									e.dataTransfer.setData('nb-col-value', col.value)
-									e.dataTransfer.setData(DRAG_TYPE_COLUMN, '')
-								} : undefined}
-								onDragEnd={!isMobile ? () => setColDragOver(null) : undefined}
-								title={t('board_drag_reorder')}
-							>
-								<span
-									className="nb-board-column-drag-handle"
-									onTouchStart={isMobile ? e => handleColumnTouchStart(e, col.value) : undefined}
-								>⠿</span>
-								{col.color ? (
-									<span className="nb-board-column-badge" style={{ background: col.color }}>{col.label}</span>
-								) : (
-									<span className="nb-board-column-name">{col.label}</span>
-								)}
-								{(() => {
-									const limit = activeView.boardColumnLimits?.[col.value]
-									const count = col.rows.length
-									const overLimit = limit !== undefined && limit > 0 && count >= limit
-									return (
-										<span
-											className={`nb-board-column-count ${overLimit ? 'nb-board-column-count--over' : ''}`}
-											onClick={e => {
-												e.stopPropagation()
-												setEditingLimit(editingLimit === col.value ? null : col.value)
-											}}
-											title={t('board_set_limit')}
-										>
-											{limit && limit > 0 ? `${count}/${limit}` : count}
-										</span>
-									)
-								})()}
-							</div>
-							{editingLimit === col.value && (
-								<div className="nb-board-limit-input-wrapper">
-									<input
-										className="nb-board-limit-input"
-										type="number"
-										min="0"
-										placeholder={t('board_limit_placeholder')}
-										defaultValue={activeView.boardColumnLimits?.[col.value] ?? ''}
-										autoFocus
-										onKeyDown={e => {
-											if (e.key === 'Enter' || e.key === 'Escape') {
-												const val = parseInt((e.target as HTMLInputElement).value)
-												const limits = { ...activeView.boardColumnLimits }
-												if (isNaN(val) || val <= 0) delete limits[col.value]
-												else limits[col.value] = val
-												void saveView({ ...activeView, boardColumnLimits: limits })
-												setEditingLimit(null)
-											}
-										}}
-										onBlur={e => {
-											const val = parseInt(e.target.value)
-											const limits = { ...activeView.boardColumnLimits }
-											if (isNaN(val) || val <= 0) delete limits[col.value]
-											else limits[col.value] = val
-											void saveView({ ...activeView, boardColumnLimits: limits })
-											setEditingLimit(null)
-										}}
-									/>
-								</div>
-							)}
-
-							{/* Cards */}
-							<div className="nb-board-cards">
-								{(() => {
-									const limit = activeView.boardColumnLimits?.[col.value]
-									const isExpanded = expandedColumns.has(col.value)
-									const visibleRows = (limit && limit > 0 && !isExpanded)
-										? col.rows.slice(0, limit)
-										: col.rows
-									const hiddenCount = col.rows.length - visibleRows.length
-									return <>
-										{visibleRows.map((row) => {
-											const shouldVirtualize = visibleRows.length >= VIRTUALIZATION_THRESHOLD
-											const card = (
-												<BoardCard
-													key={row._file.path}
-													row={row}
-													isMobile={isMobile}
-													visibleCols={visibleCols}
-													dbFolderPath={dbFolderPath}
-													manager={manager}
-													includeSubfolders={activeView.includeSubfolders ?? false}
-													onOpen={openFile}
-													onDragStart={handleCardDragStart}
-													onTouchStart={handleCardTouchStart}
-													onContextMenu={handleCardContextMenu}
-													cardStyle={activeView.conditionalFormats?.length ? getCardConditionalStyle(row, activeView.conditionalFormats, config.schema) : undefined}
-												/>
-											)
-											return shouldVirtualize
-												? <LazyCard key={row._file.path}>{card}</LazyCard>
-												: <Fragment key={row._file.path}>{card}</Fragment>
-										})}
-										{hiddenCount > 0 && (
-											<button
-												className="nb-board-show-more"
-												onClick={() => setExpandedColumns(prev => { const next = new Set(prev); next.add(col.value); return next })}
-											>
-												{`+${hiddenCount} ${t('board_show_more')}`}
-											</button>
-										)}
-										{isExpanded && limit && limit > 0 && col.rows.length > limit && (
-											<button
-												className="nb-board-show-more"
-												onClick={() => setExpandedColumns(prev => { const next = new Set(prev); next.delete(col.value); return next })}
-											>
-												{t('board_show_less')}
-											</button>
-										)}
-									</>
-								})()}
-							</div>
-
-							{/* Add card */}
-							<button className="nb-board-add-card" onClick={() => { void addCardToColumn(col.value) }}>
-								{'+ ' + t('add_card')}
-							</button>
-						</div>
-					)
-				})}
-			</div>
-
-			{/* Context menu (long-press mobile / right-click desktop) */}
-			<BottomSheet open={contextMenuFile !== null} onClose={() => setContextMenuFile(null)} title={contextMenuFile?.basename ?? ''}>
-				<button className="nb-menu-item" onClick={() => { if (contextMenuFile) { void app.workspace.getLeaf().openFile(contextMenuFile) } setContextMenuFile(null) }}>
-					<span className="nb-menu-item-icon">📄</span><span>{t('open_note')}</span>
-				</button>
-				<button className="nb-menu-item" onClick={() => { if (contextMenuFile) { void manager.duplicateNotes([contextMenuFile]) } setContextMenuFile(null) }}>
-					<span className="nb-menu-item-icon">📋</span><span>{t('duplicate_note')}</span>
-				</button>
-				<div className="nb-menu-separator" />
-				<button className="nb-menu-item nb-menu-item--danger" onClick={() => { if (contextMenuFile) { void manager.deleteNotes([contextMenuFile]) } setContextMenuFile(null) }}>
-					<span className="nb-menu-item-icon">🗑</span><span>{t('delete_note')}</span>
-				</button>
-			</BottomSheet>
+	const databaseFolderPath = dbFile.parent?.path ?? ''
+	return <div className="nb-container">
+		<BoardToolbar view={activeView} schema={config.schema} groupableColumns={groupableColumns}
+			groupByColumn={groupByColumn} rowCount={filteredRows.length} saveStatus={saveStatus}
+			activeFilters={activeFilters} onSaveView={saveView} onToggleField={toggleFieldVisibility}
+			onAddFilter={addFilter} onUpdateFilter={updateFilter} onRemoveFilter={removeFilter}
+			onToggleConjunction={toggleConjunction} />
+		<div className="nb-board">
+			{columns.map(column => <BoardColumn key={column.value || '__no_value__'} column={column}
+				cardDragOver={cardDragOver} columnDragOver={columnDragOver} view={activeView}
+				schema={config.schema} visibleColumns={visibleColumns} databaseFolderPath={databaseFolderPath}
+				manager={manager} editingLimit={editingLimit} expanded={expandedColumns.has(column.value)}
+				onSetEditingLimit={setEditingLimit}
+				onSetExpanded={expanded => setExpandedColumns(current => { const next = new Set(current); if (expanded) next.add(column.value); else next.delete(column.value); return next })}
+				onSetCardDragOver={setCardDragOver} onSetColumnDragOver={setColumnDragOver}
+				onSaveView={saveView} onMoveCard={moveCard} onMoveColumn={moveColumn}
+				onAddCard={addCardToColumn} onOpenFile={openFile} onCardDragStart={handleCardDragStart}
+				onCardContextMenu={handleCardContextMenu} />)}
 		</div>
-	)
+	</div>
 }

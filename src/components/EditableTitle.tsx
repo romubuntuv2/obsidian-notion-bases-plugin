@@ -1,5 +1,5 @@
-import { DatabaseManager } from "database-manager"
-import { useClickOrDoubleClick } from "hooks/useClickOrDoubleClick"
+import { DatabaseManager } from "../database-manager"
+import { useClickOrDoubleClick } from "../hooks/useClickOrDoubleClick"
 import { Notice, TFile } from "obsidian"
 import { useEffect, useRef, useState } from "react"
 
@@ -46,7 +46,7 @@ export default function EditableTitle({
     useEffect(() => {
         if (!editing) return;
 
-        requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
             inputRef.current?.focus();
             inputRef.current?.select();
         });
@@ -83,7 +83,7 @@ export default function EditableTitle({
                 className={className}
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
-                onBlur={save}
+                onBlur={() => { void save() }}
                 onClick={(e) => e.stopPropagation()}
                 onDoubleClick={(e) => e.stopPropagation()}
                 onKeyDown={(e) => {

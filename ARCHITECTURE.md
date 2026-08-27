@@ -200,16 +200,57 @@ Calendar changes must preserve:
 7. filtering, conditional formatting, and subfolder paths;
 8. the `DatabaseCalendar` integration API used by `DatabaseRoot`.
 
-## 11. Verification
+## 11. Board architecture
 
-The structural refactor is verified with TypeScript and the production bundle through
-`npm run build`. Calendar-specific lint passes. The test run reports 177 passing tests,
-but one suite cannot import `EditableTitle.tsx` because its existing absolute imports
-(`database-manager` and `hooks/useClickOrDoubleClick`) are unresolved by Vitest.
-Repository-wide lint also has a pre-existing `@typescript-eslint/no-misused-promises`
-error in `EditableTitle.tsx`; both issues are outside the Calendar split.
+`src/components/DatabaseBoard.tsx` remains the public Board entry point used by
+`DatabaseRoot`. It owns row loading, filter/sort derivation, group-column selection,
+column ordering, view persistence, and frontmatter mutations.
 
-## 12. Changelog
+```text
+DatabaseBoard
+├── BoardToolbar
+├── BoardColumn × N
+│   ├── LazyBoardCard (for large columns)
+│   │   └── BoardCard
+│   └── add-card / column-limit controls
+└── Obsidian Menu (card right-click actions)
+```
+
+Files under `src/components/Board/`:
+
+| File | Responsibility |
+| --- | --- |
+| `BoardToolbar.tsx` | Desktop menus, view toggles, filter pills, save state, and conditional-format controls. |
+| `BoardColumn.tsx` | Column drag/drop, limits, expansion, cards, and add-card action. |
+| `BoardCard.tsx` | Editable title, visible properties, folder path, card drag, and right-click forwarding. |
+| `LazyBoardCard.tsx` | IntersectionObserver-based rendering for large columns. |
+| `board-types.ts` | Column data contract, drag MIME keys, and virtualization threshold. |
+
+Board interactions are desktop-only:
+
+- cards and columns use native HTML drag/drop;
+- right-click opens Obsidian's native `Menu` for open, duplicate, and delete actions;
+- no touch listeners, drag ghosts, long-press logic, responsive toolbar, or BottomSheet
+  dependency remains.
+
+Board stability constraints:
+
+1. group by select/status and the no-value column;
+2. saved column ordering and card movement through frontmatter;
+3. column limits and show more/less state;
+4. conditional formatting and visible card properties;
+5. subfolder paths and inline title editing;
+6. virtualization for columns with at least 30 visible cards;
+7. the `DatabaseBoard` integration API used by `DatabaseRoot`.
+
+## 12. Verification
+
+The structural refactors are verified with TypeScript and the production bundle through
+`npm run build`. Calendar-, Board-, and `EditableTitle`-specific lint passes. All 8 test
+files and 189 tests pass. `EditableTitle` uses relative imports so it resolves in both
+the production bundle and Vitest.
+
+## 13. Changelog
 
 ### 2026-08-27
 
@@ -223,3 +264,11 @@ error in `EditableTitle.tsx`; both issues are outside the Calendar split.
 - Established desktop Obsidian as the only maintained platform.
 - Removed Calendar mobile detection, mobile toolbar, BottomSheets, long-press actions,
   touch handlers, and mobile card-overflow behavior.
+- Replaced the monolithic Board implementation with focused modules under
+  `src/components/Board/`.
+- Kept Board data derivation, persistence, and vault mutations in `DatabaseBoard`.
+- Removed Board mobile detection, touch drag/ghost logic, long-press behavior,
+  responsive toolbar branches, and BottomSheets.
+- Preserved desktop card actions through Obsidian's native context menu.
+- Corrected `EditableTitle` imports and event wrappers, restoring a fully passing test
+  suite.
