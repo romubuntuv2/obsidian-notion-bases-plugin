@@ -4,6 +4,13 @@ import { ViewConfig } from './types'
 import { runtimePrefs } from './runtime-prefs'
 import { t } from './i18n'
 
+export interface VirtualPropertyMenuVisibility {
+	parentFolder: boolean
+	path: boolean
+	ctime: boolean
+	mtime: boolean
+}
+
 export interface NotionBasesSettings {
 	databaseFileName: string
 	defaultRowHeight: number
@@ -11,8 +18,8 @@ export interface NotionBasesSettings {
 	readInlineFields: boolean
 	pageSize: number
 	clipEllipsis: boolean,
-
-	showDatabasePathInPicker:boolean
+	showDatabasePathInPicker: boolean
+	virtualPropertyMenuVisibility: VirtualPropertyMenuVisibility
 }
 
 export const DEFAULT_SETTINGS: NotionBasesSettings = {
@@ -22,8 +29,13 @@ export const DEFAULT_SETTINGS: NotionBasesSettings = {
 	readInlineFields: false,
 	pageSize: 0,
 	clipEllipsis: true,
-
-	showDatabasePathInPicker:true
+	showDatabasePathInPicker: true,
+	virtualPropertyMenuVisibility: {
+		parentFolder: true,
+		path: true,
+		ctime: false,
+		mtime: false,
+	},
 }
 
 export class NotionBasesSettingTab extends PluginSettingTab {
@@ -50,6 +62,30 @@ export class NotionBasesSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings()
 					})
 			)
+
+		new Setting(containerEl)
+			.setName(t('settings_virtual_fields_heading'))
+			.setDesc(t('settings_virtual_fields_desc'))
+			.setHeading()
+
+		const virtualFields: Array<{ key: keyof VirtualPropertyMenuVisibility; label: string }> = [
+			{ key: 'parentFolder', label: `📁 ${t('folder_column')}` },
+			{ key: 'path', label: `🧭 ${t('file_path')}` },
+			{ key: 'ctime', label: `🕓 ${t('created_time')}` },
+			{ key: 'mtime', label: `🖊 ${t('last_edited_time')}` },
+		]
+		for (const field of virtualFields) {
+			new Setting(containerEl)
+				.setName(field.label)
+				.setDesc(t('settings_virtual_field_toggle_desc'))
+				.addToggle(toggle => toggle
+					.setValue(this.plugin.settings.virtualPropertyMenuVisibility[field.key])
+					.onChange(async value => {
+						this.plugin.settings.virtualPropertyMenuVisibility[field.key] = value
+						runtimePrefs.virtualPropertyMenuVisibility[field.key] = value
+						await this.plugin.saveSettings()
+					}))
+		}
 
 		new Setting(containerEl)
 			.setName(t('settings_inline_fields_name'))

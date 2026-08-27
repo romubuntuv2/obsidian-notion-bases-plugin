@@ -14,7 +14,6 @@ interface DatabaseMonthCellProps {
 	todayDay: number | null
 	dragOverDay: number | null
 	rowsByDate: RowsByDate
-	dbFile: TFile
 	manager: DatabaseManager
 	activeView: ViewConfig
 	dateField: ColumnSchema
@@ -31,7 +30,7 @@ interface DatabaseMonthCellProps {
 
 export function DatabaseMonthCell(props: DatabaseMonthCellProps) {
 	const { day, currentYear, currentMonth, todayDay, dragOverDay, rowsByDate,
-		dbFile, manager, activeView, dateField, schema, visibleColumns,
+		manager, activeView, dateField, schema, visibleColumns,
 		onOpenFile, onDayClick, onCardDragStart, onCardContextMenu,
 		onDayDragOver, onDayDragLeave, onDayDrop } = props
 	if (day === null) return <div className="nb-cal-monthly-cell nb-cal-monthly-cell--outside" />
@@ -46,7 +45,7 @@ export function DatabaseMonthCell(props: DatabaseMonthCellProps) {
 		title={t('calendar_click_to_create')}>
 		<div className="nb-cal-monthly-cell-header"><span className={`nb-cal-day-num${isToday ? ' nb-cal-day-num--today' : ''}`}>{day}</span></div>
 		<div className="nb-cal-monthly-cell-body">
-			{dayRows.map(row => <DatabaseMonthlyCard key={row._file.path} row={row} dbFile={dbFile}
+			{dayRows.map(row => <DatabaseMonthlyCard key={row._file.path} row={row}
 				manager={manager} activeView={activeView} dateField={dateField} schema={schema} visibleColumns={visibleColumns}
 				onOpenFile={onOpenFile} onCardDragStart={onCardDragStart} onContextMenu={onCardContextMenu} />)}
 		</div>

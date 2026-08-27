@@ -5,10 +5,12 @@ import { t } from '../../i18n'
 import { SaveIndicator } from '../SaveIndicator'
 import { FilterPillsRow } from '../FilterPillsRow'
 import { ConditionalFormatPanel } from '../ConditionalFormatPanel'
+import { getPropertyIcon, isPropertyVisibleInView } from '../../virtual-properties'
 
 interface BoardToolbarProps {
 	view: ViewConfig
 	schema: ColumnSchema[]
+	fieldMenuSchema: ColumnSchema[]
 	groupableColumns: ColumnSchema[]
 	groupByColumn: ColumnSchema | null
 	rowCount: number
@@ -22,7 +24,7 @@ interface BoardToolbarProps {
 	onToggleConjunction: (id: string) => void
 }
 
-export function BoardToolbar({ view, schema, groupableColumns, groupByColumn, rowCount,
+export function BoardToolbar({ view, schema, fieldMenuSchema, groupableColumns, groupByColumn, rowCount,
 	saveStatus, activeFilters, onSaveView, onToggleField, onAddFilter, onUpdateFilter,
 	onRemoveFilter, onToggleConjunction }: BoardToolbarProps) {
 	const [fieldsOpen, setFieldsOpen] = useState(false)
@@ -56,9 +58,9 @@ export function BoardToolbar({ view, schema, groupableColumns, groupByColumn, ro
 				<button className={`nb-toolbar-btn${fieldsOpen ? ' nb-toolbar-btn--active' : ''}`} onClick={() => setFieldsOpen(value => !value)}>{t('fields')}</button>
 				{fieldsOpen && <div className="nb-fields-dropdown">
 					<div className="nb-fields-dropdown-label">{t('fields_in_card')}</div>
-					{schema.filter(column => column.id !== groupByColumn?.id && column.type !== 'title').map(column => <label key={column.id} className="nb-field-row">
-						<input type="checkbox" className="nb-field-checkbox" checked={column.visible && !view.hiddenColumns.includes(column.id)} onChange={() => { void onToggleField(column.id) }} />
-						<span className="nb-field-icon">{getColumnIconStatic(column.type)}</span><span className="nb-field-name">{column.name}</span>
+					{fieldMenuSchema.filter(column => column.id !== groupByColumn?.id && column.type !== 'title').map(column => <label key={column.id} className="nb-field-row">
+						<input type="checkbox" className="nb-field-checkbox" checked={isPropertyVisibleInView(column, view)} onChange={() => { void onToggleField(column.id) }} />
+						<span className="nb-field-icon">{getPropertyIcon(column) ?? getColumnIconStatic(column.type)}</span><span className="nb-field-name">{column.name}</span>
 					</label>)}
 				</div>}
 			</div>

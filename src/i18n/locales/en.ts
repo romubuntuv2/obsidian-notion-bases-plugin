@@ -104,6 +104,7 @@ const en = {
 	system_fields_label: 'System fields',
 	created_time: 'Created time',
 	last_edited_time: 'Last edited time',
+	file_path: 'File path',
 	system_field_readonly: 'Read-only field from file metadata',
 	hide_field: 'Hide field',
 	enable_wrap_text: 'Wrap text',
@@ -465,6 +466,9 @@ const en = {
 	settings_db_filename_desc: 'Name of the special file that identifies a database in a folder.',
 	settings_row_height_name: 'Default row height',
 	settings_row_height_desc: 'Height in pixels of each table row.',
+	settings_virtual_fields_heading: 'Virtual properties in fields menus',
+	settings_virtual_fields_desc: 'Choose which file-native properties are offered when opening a view\'s fields menu. Existing view selections and data are not removed.',
+	settings_virtual_field_toggle_desc: 'Show this virtual property in fields menus.',
 
 	// Inline fields
 	settings_inline_fields_name: 'Read dataview inline fields',

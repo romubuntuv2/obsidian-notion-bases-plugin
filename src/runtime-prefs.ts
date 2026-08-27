@@ -5,4 +5,10 @@
  */
 export const runtimePrefs = {
 	clipEllipsis: true,
+	virtualPropertyMenuVisibility: {
+		parentFolder: true,
+		path: true,
+		ctime: false,
+		mtime: false,
+	},
 }

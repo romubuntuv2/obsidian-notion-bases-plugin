@@ -2,6 +2,7 @@ import { DatabaseManager } from "../../database-manager"
 import { useClickOrDoubleClick } from "../../hooks/useClickOrDoubleClick"
 import { Notice, TFile } from "obsidian"
 import { useEffect, useRef, useState } from "react"
+import { updateVirtualProperty } from "../../virtual-properties"
 
 
 interface EditableTitleProps {
@@ -63,7 +64,7 @@ export default function EditableTitle({
         }
 
         try {
-            await manager.renameNote(file, newTitle);
+            await updateVirtualProperty(manager, file, "title", newTitle);
         } catch (err) {
             console.error(err);
             new Notice("Unable to rename note");

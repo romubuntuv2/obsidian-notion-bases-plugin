@@ -13,6 +13,7 @@ import { BoardColumn } from './Board/BoardColumn'
 import { BoardToolbar } from './Board/BoardToolbar'
 import { BoardColumnData, DRAG_TYPE_CARD } from './Board/board-types'
 import { showNoteContextMenu } from './ContextMenu/showNoteContextMenu'
+import { getFieldMenuColumns, getViewPropertyColumns, getVisibleViewProperties, toggleViewProperty } from '../virtual-properties'
 
 interface DatabaseBoardProps {
 	dbFile: TFile | null
@@ -24,7 +25,7 @@ interface DatabaseBoardProps {
 export function DatabaseBoard({ dbFile, manager, externalView, onViewChange }: DatabaseBoardProps) {
 	const app = useApp()
 	const { status: saveStatus, trackSave } = useSaveTracker()
-	const { rows, config, loading, activeFilters, setActiveFilters } = useDatabaseRows({
+	const { rows, config, effectiveSchema, loading, activeFilters, setActiveFilters } = useDatabaseRows({
 		app, dbFile, manager, includeSubfolders: externalView.includeSubfolders, externalView,
 	})
 	const [activeView, setActiveView] = useState<ViewConfig>(externalView)
@@ -51,10 +52,11 @@ export function DatabaseBoard({ dbFile, manager, externalView, onViewChange }: D
 	const debouncedFilters = useDebouncedValue(activeFilters, 200)
 	const filteredRows = useMemo(() => applyFilters(rows, debouncedFilters), [rows, debouncedFilters])
 	const sortedRows = useMemo(() => applySorts(filteredRows, activeView.sorts), [filteredRows, activeView.sorts])
-	const visibleColumns = useMemo(() => config.schema.filter(column =>
-		column.id !== groupByColumn?.id && column.type !== 'title' && column.visible
-		&& !activeView.hiddenColumns.includes(column.id)
-	), [config.schema, activeView.hiddenColumns, groupByColumn])
+	const viewPropertyColumns = useMemo(() => getViewPropertyColumns(effectiveSchema), [effectiveSchema])
+	const fieldMenuColumns = getFieldMenuColumns(effectiveSchema)
+	const visibleColumns = useMemo(() => getVisibleViewProperties(effectiveSchema, activeView).filter(column =>
+		column.id !== groupByColumn?.id && column.type !== 'title'
+	), [effectiveSchema, activeView, groupByColumn])
 
 	const defaultStatusOptions = useMemo<SelectOption[]>(() => [
 		{ value: t('status_not_started'), color: '#9E9E9E' },
@@ -131,11 +133,10 @@ export function DatabaseBoard({ dbFile, manager, externalView, onViewChange }: D
 	const updateFilter = (id: string, operator: FilterOperator, value: string) => { const next = activeFilters.map(filter => filter.id === id ? { ...filter, operator, value } : filter); setActiveFilters(next); void saveActivePills(next) }
 	const toggleConjunction = (id: string) => { const next = activeFilters.map(filter => filter.id === id ? { ...filter, conjunction: filter.conjunction === 'and' ? 'or' as const : 'and' as const } : filter); setActiveFilters(next); void saveActivePills(next) }
 	const toggleFieldVisibility = useCallback(async (fieldId: string) => {
-		const hiddenColumns = activeView.hiddenColumns.includes(fieldId)
-			? activeView.hiddenColumns.filter(id => id !== fieldId)
-			: [...activeView.hiddenColumns, fieldId]
-		await saveView({ ...activeView, hiddenColumns })
-	}, [activeView, saveView])
+		const column = effectiveSchema.find(candidate => candidate.id === fieldId)
+		if (!column) return
+		await saveView(toggleViewProperty(activeView, column))
+	}, [activeView, effectiveSchema, saveView])
 
 	const openFile = useCallback((file: TFile) => { void app.workspace.getLeaf().openFile(file) }, [app])
 	const handleCardDragStart = useCallback((event: React.DragEvent, filePath: string) => {
@@ -152,9 +153,8 @@ export function DatabaseBoard({ dbFile, manager, externalView, onViewChange }: D
 	if (loading) return <div className="nb-loading">{t('loading')}</div>
 	if (groupableColumns.length === 0) return <div className="nb-empty-state"><p>{t('board_no_select_col')}</p><p>{t('board_add_select_hint')}</p></div>
 
-	const databaseFolderPath = dbFile.parent?.path ?? ''
 	return <div className="nb-container">
-		<BoardToolbar view={activeView} schema={config.schema} groupableColumns={groupableColumns}
+		<BoardToolbar view={activeView} schema={viewPropertyColumns} fieldMenuSchema={fieldMenuColumns} groupableColumns={groupableColumns}
 			groupByColumn={groupByColumn} rowCount={filteredRows.length} saveStatus={saveStatus}
 			activeFilters={activeFilters} onSaveView={saveView} onToggleField={toggleFieldVisibility}
 			onAddFilter={addFilter} onUpdateFilter={updateFilter} onRemoveFilter={removeFilter}
@@ -162,7 +162,7 @@ export function DatabaseBoard({ dbFile, manager, externalView, onViewChange }: D
 		<div className="nb-board">
 			{columns.map(column => <BoardColumn key={column.value || '__no_value__'} column={column}
 				cardDragOver={cardDragOver} columnDragOver={columnDragOver} view={activeView}
-				schema={config.schema} visibleColumns={visibleColumns} databaseFolderPath={databaseFolderPath}
+				schema={effectiveSchema} visibleColumns={visibleColumns}
 				manager={manager} editingLimit={editingLimit} expanded={expandedColumns.has(column.value)}
 				onSetEditingLimit={setEditingLimit}
 				onSetExpanded={expanded => setExpandedColumns(current => { const next = new Set(current); if (expanded) next.add(column.value); else next.delete(column.value); return next })}

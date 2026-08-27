@@ -26,6 +26,10 @@ export type ColumnType =
 /** File-native metadata sources for read-only system columns */
 export type SystemField = 'ctime' | 'mtime'
 
+export type PropertyScope = 'database' | 'virtual' | 'shared'
+
+export type VirtualPropertySource = 'title' | 'parentFolder' | 'path' | 'ctime' | 'mtime'
+
 export interface SelectOption {
 	value: string
 	color?: string
@@ -43,6 +47,8 @@ export interface ColumnSchema {
 	name: string
 	type: ColumnType
 	visible: boolean
+	propertyScope?: PropertyScope
+	virtualSource?: VirtualPropertySource
 	width?: number
 	options?: SelectOption[]  // select / multiselect
 	formula?: string          // formula
@@ -133,6 +139,7 @@ export interface ViewConfig {
 	rowOrder?: string[]
 	conditionalFormats?: ConditionalFormatRule[]
 	filtersCollapsed?: boolean
+	virtualColumnIds?: string[]
 }
 
 export interface ConditionalFormatRule {
@@ -161,6 +168,7 @@ export interface FolderArrangementConfig {
 export interface DatabaseConfig {
 	schema: ColumnSchema[]
 	views: ViewConfig[]
+	virtualPropertiesVersion?: number
 	templatePath?: string
 	templateFolder?: string            // restricts the template picker to this folder (issue #42)
 	askTemplateOnCreate?: boolean
@@ -180,6 +188,7 @@ export const DEFAULT_VIEW: ViewConfig = {
 export const DEFAULT_DATABASE_CONFIG: DatabaseConfig = {
 	schema: [],
 	views: [DEFAULT_VIEW],
+	virtualPropertiesVersion: 1,
 }
 
 // ── Inline field metadata ───────────────────────────────────────────────────

@@ -14,6 +14,7 @@ import { FilterPillsRow } from './FilterPillsRow'
 import { t } from '../i18n'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { useDatabaseRows } from '../hooks/useDatabaseRows'
+import { getViewPropertyColumns } from '../virtual-properties'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { MobileToolbar, IconSort, IconFilter, IconSubfolders } from './MobileToolbar'
 import { BottomSheet } from './BottomSheet'
@@ -493,7 +494,7 @@ function IconPie() {
 
 export function DatabaseCharts({ dbFile, manager, externalView, onViewChange }: DatabaseChartsProps) {
 	const app = useApp()
-	const { rows, config, loading, activeFilters, setActiveFilters } = useDatabaseRows({
+	const { rows, effectiveSchema, loading, activeFilters, setActiveFilters } = useDatabaseRows({
 		app, dbFile, manager, includeSubfolders: externalView.includeSubfolders, externalView,
 	})
 	const [activeView, setActiveView] = useState<ViewConfig>(externalView)
@@ -596,22 +597,23 @@ export function DatabaseCharts({ dbFile, manager, externalView, onViewChange }: 
 
 	const chartData = useMemo(() => {
 		if (!chartXAxis) return []
-		const points = aggregateData(displayRows, chartXAxis, chartYAxis === '_count' ? undefined : chartYAxis, chartAggregation, config.schema)
+		const points = aggregateData(displayRows, chartXAxis, chartYAxis === '_count' ? undefined : chartYAxis, chartAggregation, effectiveSchema)
 		if (activeView.sorts.length === 0) points.sort((a, b) => b.value - a.value)
 		return points
-	}, [displayRows, chartXAxis, chartYAxis, chartAggregation, config.schema, activeView.sorts.length])
+	}, [displayRows, chartXAxis, chartYAxis, chartAggregation, effectiveSchema, activeView.sorts.length])
 
 	// ── Column options for config ────────────────────────────────────────────
 
+	const viewPropertyColumns = useMemo(() => getViewPropertyColumns(effectiveSchema), [effectiveSchema])
 	const xAxisOptions = useMemo(() => {
-		const cols = config.schema.filter(c => c.visible && ['text', 'select', 'multiselect', 'status', 'date', 'checkbox'].includes(c.type))
+		const cols = viewPropertyColumns.filter(c => ['text', 'select', 'multiselect', 'status', 'date', 'checkbox'].includes(c.type))
 		return [{ id: '_title', name: t('name_column'), type: 'title' }, ...cols]
-	}, [config.schema])
+	}, [viewPropertyColumns])
 
 	const yAxisOptions = useMemo(() => {
-		const cols = config.schema.filter(c => c.visible && c.type === 'number')
+		const cols = viewPropertyColumns.filter(c => c.type === 'number')
 		return [{ id: '_count', name: t('chart_count_records'), type: 'count' }, ...cols]
-	}, [config.schema])
+	}, [viewPropertyColumns])
 
 	// ── Render ───────────────────────────────────────────────────────────────
 
@@ -716,7 +718,7 @@ export function DatabaseCharts({ dbFile, manager, externalView, onViewChange }: 
 				<button className="nb-menu-item" onClick={() => addFilter('_title', t('name_column'), '📄', 'title')}>
 					<span className="nb-menu-item-icon">📄</span><span>{t('name_column')}</span>
 				</button>
-				{config.schema.map(col => (
+				{viewPropertyColumns.map(col => (
 					<button key={col.id} className="nb-menu-item" onClick={() => addFilter(col.id, col.name, getColumnIconStatic(col.type), col.type)}>
 						<span className="nb-menu-item-icon">{getColumnIconStatic(col.type)}</span>
 						<span>{col.name}</span>
@@ -730,7 +732,7 @@ export function DatabaseCharts({ dbFile, manager, externalView, onViewChange }: 
 				{activeView.sorts.map((sort, idx) => {
 					const name = sort.columnId === '_title'
 						? 'Nome'
-						: (config.schema.find(c => c.id === sort.columnId)?.name ?? sort.columnId)
+						: (effectiveSchema.find(c => c.id === sort.columnId)?.name ?? sort.columnId)
 					return (
 						<div key={sort.columnId} className="nb-sort-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', minHeight: '44px' }}>
 							<div className="nb-sort-row-priority" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -746,7 +748,7 @@ export function DatabaseCharts({ dbFile, manager, externalView, onViewChange }: 
 					)
 				})}
 				{(() => {
-					const sortableSchema = config.schema.filter(c => c.type !== 'formula' && c.type !== 'lookup' && c.type !== 'relation' && c.type !== 'multiselect')
+					const sortableSchema = viewPropertyColumns.filter(c => c.type !== 'formula' && c.type !== 'lookup' && c.type !== 'relation' && c.type !== 'multiselect')
 					const usedIds = new Set(activeView.sorts.map(s => s.columnId))
 					const available = [
 						...(!usedIds.has('_title') ? [{ id: '_title', name: 'Nome' }] : []),
@@ -808,7 +810,7 @@ export function DatabaseCharts({ dbFile, manager, externalView, onViewChange }: 
 							<button className="nb-menu-item" onClick={() => addFilter('_title', t('name_column'), '📄', 'title')}>
 								<span className="nb-menu-item-icon">📄</span><span>{t('name_column')}</span>
 							</button>
-							{config.schema.map(col => (
+							{viewPropertyColumns.map(col => (
 								<button key={col.id} className="nb-menu-item" onClick={() => addFilter(col.id, col.name, getColumnIconStatic(col.type), col.type)}>
 									<span className="nb-menu-item-icon">{getColumnIconStatic(col.type)}</span>
 									<span>{col.name}</span>
@@ -823,12 +825,12 @@ export function DatabaseCharts({ dbFile, manager, externalView, onViewChange }: 
 					{activeView.sorts.length > 0 && <span className="nb-hidden-badge">{activeView.sorts.length}</span>}
 				</button>
 				{sortPanelOpen && sortAnchorRect && (
-					<ChartSortPanel sorts={activeView.sorts} schema={config.schema} onSortChange={s => { void handleSortChange(s) }} onClose={() => setSortPanelOpen(false)} anchorRect={sortAnchorRect} panelRef={sortPanelRef} />
+					<ChartSortPanel sorts={activeView.sorts} schema={viewPropertyColumns} onSortChange={s => { void handleSortChange(s) }} onClose={() => setSortPanelOpen(false)} anchorRect={sortAnchorRect} panelRef={sortPanelRef} />
 				)}
 			</div>
 			<FilterPillsRow
 				activeFilters={activeFilters}
-				schema={config.schema}
+				schema={effectiveSchema}
 				onUpdate={updateFilter}
 				onRemove={removeFilter}
 				onToggleConjunction={toggleConjunction}

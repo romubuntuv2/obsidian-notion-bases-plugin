@@ -19,6 +19,11 @@ import { BottomSheet } from './BottomSheet'
 import { SaveIndicator } from './SaveIndicator'
 import { useSaveTracker } from '../hooks/useSaveTracker'
 import { stringifyScalar } from '../value-utils'
+import {
+	getFieldMenuColumns, getPropertyCapabilities, getPropertyIcon, getViewPropertyColumns, getVisibleViewProperties,
+	isPropertyVisibleInView, toggleViewProperty,
+} from '../virtual-properties'
+import EditableTitle from './EditableFields/EditableTitle'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -140,8 +145,7 @@ interface TimelineBarProps {
 	origBarWidth: number
 	isMobile: boolean
 	visibleCols: ColumnSchema[]
-	dbFolderPath: string
-	includeSubfolders: boolean
+	manager: DatabaseManager
 	startFieldId: string | null
 	endFieldId: string | null
 	onOpen: (file: TFile) => void
@@ -150,14 +154,10 @@ interface TimelineBarProps {
 }
 
 const TimelineBar = React.memo(function TimelineBar({
-	row, barLeft, barWidth, isMobile, visibleCols, dbFolderPath, includeSubfolders,
+	row, barLeft, barWidth, isMobile, visibleCols, manager,
 	origBarLeft, origBarWidth, startFieldId, endFieldId,
 	onOpen, onContextMenu, onResizeStart,
 }: TimelineBarProps) {
-	const fileFolder = row._file.parent?.path ?? ''
-	const relPath = includeSubfolders && fileFolder.length > dbFolderPath.length
-		? fileFolder.slice(dbFolderPath.length + 1) : ''
-
 	return (
 		<div className="nb-tl-bar"
 			style={{ left: barLeft, width: barWidth, top: (ROW_H - 22) / 2, height: 22 }}
@@ -169,8 +169,7 @@ const TimelineBar = React.memo(function TimelineBar({
 					e.stopPropagation(); e.preventDefault()
 					onResizeStart(row._file.path, 'left', e.clientX, origBarLeft, origBarWidth, startFieldId, endFieldId)
 				}} />
-			<span className="nb-tl-bar-title">{row._title}</span>
-			{relPath ? <span className="nb-folder-path" style={{ marginLeft: 4 }}>{relPath}</span> : null}
+			<EditableTitle title={row._title} file={row._file} manager={manager} onOpen={onOpen} className="nb-tl-bar-title" />
 			{visibleCols.map(col => {
 				const val = row[col.id]
 				if (!val || stringifyScalar(val).trim() === '') return null
@@ -200,7 +199,7 @@ export function DatabaseTimeline({ dbFile, manager, externalView, onViewChange }
 	const { status: saveStatus, trackSave } = useSaveTracker()
 	const today = useMemo(() => new Date(), [])
 
-	const { rows, config, loading, activeFilters, setActiveFilters } = useDatabaseRows({
+	const { rows, config, effectiveSchema, loading, activeFilters, setActiveFilters } = useDatabaseRows({
 		app, dbFile, manager, includeSubfolders: externalView.includeSubfolders, externalView,
 	})
 	const [activeView, setActiveView] = useState<ViewConfig>(externalView)
@@ -307,15 +306,18 @@ export function DatabaseTimeline({ dbFile, manager, externalView, onViewChange }
 	const filteredRows  = useMemo(() => applyFilters(rows, debouncedFilters), [rows, debouncedFilters])
 	const displayRows   = useMemo(() => applySorts(filteredRows, activeView.sorts), [filteredRows, activeView.sorts])
 
-	const startField = useMemo(() => config.schema.find(c => c.id === activeView.timelineStartField) ?? null, [config.schema, activeView.timelineStartField])
-	const endField   = useMemo(() => config.schema.find(c => c.id === activeView.timelineEndField)   ?? null, [config.schema, activeView.timelineEndField])
+	const mutableDateColumns = useMemo(() => config.schema.filter(c => c.type === 'date' && getPropertyCapabilities(c).editable), [config.schema])
+	const startField = useMemo(() => mutableDateColumns.find(c => c.id === activeView.timelineStartField) ?? null, [mutableDateColumns, activeView.timelineStartField])
+	const endField   = useMemo(() => mutableDateColumns.find(c => c.id === activeView.timelineEndField)   ?? null, [mutableDateColumns, activeView.timelineEndField])
 	const groupField = useMemo(() => config.schema.find(c => c.id === activeView.timelineGroupByField) ?? null, [config.schema, activeView.timelineGroupByField])
 
 	const visibleCols = useMemo(
-		() => config.schema.filter(col => col.visible && !activeView.hiddenColumns.includes(col.id)
-			&& col.id !== activeView.timelineStartField && col.id !== activeView.timelineEndField),
-		[config.schema, activeView.hiddenColumns, activeView.timelineStartField, activeView.timelineEndField]
+		() => getVisibleViewProperties(effectiveSchema, activeView).filter(col =>
+			col.id !== activeView.timelineStartField && col.id !== activeView.timelineEndField),
+		[effectiveSchema, activeView]
 	)
+	const viewPropertyColumns = useMemo(() => getViewPropertyColumns(effectiveSchema), [effectiveSchema])
+	const fieldMenuColumns = getFieldMenuColumns(effectiveSchema)
 
 	const noIntervalRows = useMemo(() => {
 		if (!startField) return []
@@ -383,11 +385,10 @@ export function DatabaseTimeline({ dbFile, manager, externalView, onViewChange }
 	const toggleConj   = (id: string) => { const n = activeFilters.map(f => f.id === id ? { ...f, conjunction: f.conjunction === 'and' ? 'or' as const : 'and' as const } : f); setActiveFilters(n); void saveActivePills(n) }
 
 	const toggleFieldVisibility = useCallback(async (fieldId: string) => {
-		const hidden = activeView.hiddenColumns.includes(fieldId)
-			? activeView.hiddenColumns.filter(id => id !== fieldId)
-			: [...activeView.hiddenColumns, fieldId]
-		await saveView({ ...activeView, hiddenColumns: hidden })
-	}, [activeView, saveView])
+		const column = effectiveSchema.find(candidate => candidate.id === fieldId)
+		if (!column) return
+		await saveView(toggleViewProperty(activeView, column))
+	}, [activeView, effectiveSchema, saveView])
 
 	const handlePrev  = () => scrollRef.current?.scrollBy({ left: -(scrollRef.current.clientWidth * 0.6), behavior: 'smooth' })
 	const handleNext  = () => scrollRef.current?.scrollBy({ left:   scrollRef.current.clientWidth * 0.6,  behavior: 'smooth' })
@@ -399,7 +400,6 @@ export function DatabaseTimeline({ dbFile, manager, externalView, onViewChange }
 	// ── Render ────────────────────────────────────────────────────────────────
 
 	const isMobile = useIsMobile()
-	const dbFolderPath = dbFile?.parent?.path ?? ''
 	const openFile = useCallback((file: TFile) => { void app.workspace.getLeaf().openFile(file) }, [app])
 	const handleBarContextMenu = useCallback((file: TFile) => { setContextMenuFile(file) }, [])
 	const handleResizeStart = useCallback((filePath: string, handle: 'left' | 'right', startX: number, origBarLeft: number, origBarWidth: number, sFieldId: string | null, eFieldId: string | null) => {
@@ -417,7 +417,7 @@ export function DatabaseTimeline({ dbFile, manager, externalView, onViewChange }
 		label: string; valueKey: 'timelineStartField' | 'timelineEndField'; open: boolean
 		setOpen: (v: boolean) => void; menuRef: React.RefObject<HTMLDivElement>
 	}) => {
-		const fieldName = config.schema.find(c => c.id === activeView[valueKey])?.name ?? t('none_value')
+		const fieldName = mutableDateColumns.find(c => c.id === activeView[valueKey])?.name ?? t('none_value')
 		return (
 			<div className="nb-fields-menu-wrapper" ref={ref}>
 				<button className={`nb-toolbar-btn${open ? ' nb-toolbar-btn--active' : ''}`} onClick={() => setOpen(!open)}>
@@ -430,7 +430,7 @@ export function DatabaseTimeline({ dbFile, manager, externalView, onViewChange }
 							onClick={() => { void saveView({ ...activeView, [valueKey]: undefined }); setOpen(false) }}>
 							<span className="nb-menu-item-icon">—</span><span>{t('none_value')}</span>
 						</button>
-						{config.schema.filter(c => c.type === 'date').map(col => (
+						{mutableDateColumns.map(col => (
 							<button key={col.id} className={`nb-menu-item${activeView[valueKey] === col.id ? ' nb-menu-item--active' : ''}`}
 								onClick={() => { void saveView({ ...activeView, [valueKey]: col.id }); setOpen(false) }}>
 								<span className="nb-menu-item-icon">📅</span><span>{col.name}</span>
@@ -473,7 +473,7 @@ export function DatabaseTimeline({ dbFile, manager, externalView, onViewChange }
 					onClick={() => { void saveView({ ...activeView, timelineStartField: undefined }); setStartMenuOpen(false) }}>
 					<span className="nb-menu-item-icon">—</span><span>{t('none_value')}</span>
 				</button>
-				{config.schema.filter(c => c.type === 'date').map(col => (
+				{mutableDateColumns.map(col => (
 					<button key={col.id} className={`nb-menu-item${activeView.timelineStartField === col.id ? ' nb-menu-item--active' : ''}`}
 						onClick={() => { void saveView({ ...activeView, timelineStartField: col.id }); setStartMenuOpen(false) }}>
 						<span className="nb-menu-item-icon">📅</span><span>{col.name}</span>
@@ -485,7 +485,7 @@ export function DatabaseTimeline({ dbFile, manager, externalView, onViewChange }
 					onClick={() => { void saveView({ ...activeView, timelineEndField: undefined }); setEndMenuOpen(false) }}>
 					<span className="nb-menu-item-icon">—</span><span>{t('none_value')}</span>
 				</button>
-				{config.schema.filter(c => c.type === 'date').map(col => (
+				{mutableDateColumns.map(col => (
 					<button key={col.id} className={`nb-menu-item${activeView.timelineEndField === col.id ? ' nb-menu-item--active' : ''}`}
 						onClick={() => { void saveView({ ...activeView, timelineEndField: col.id }); setEndMenuOpen(false) }}>
 						<span className="nb-menu-item-icon">📅</span><span>{col.name}</span>
@@ -505,10 +505,10 @@ export function DatabaseTimeline({ dbFile, manager, externalView, onViewChange }
 				))}
 			</BottomSheet>
 			<BottomSheet open={fieldsMenuOpen} onClose={() => setFieldsMenuOpen(false)} title={t('fields')}>
-				{config.schema.map(col => (
+				{fieldMenuColumns.map(col => (
 					<label key={col.id} className="nb-field-row">
-						<input type="checkbox" className="nb-field-checkbox" checked={col.visible && !activeView.hiddenColumns.includes(col.id)} onChange={() => { void toggleFieldVisibility(col.id) }} />
-						<span className="nb-field-icon">{getColumnIconStatic(col.type)}</span>
+						<input type="checkbox" className="nb-field-checkbox" checked={isPropertyVisibleInView(col, activeView)} onChange={() => { void toggleFieldVisibility(col.id) }} />
+						<span className="nb-field-icon">{getPropertyIcon(col) ?? getColumnIconStatic(col.type)}</span>
 						<span className="nb-field-name">{col.name}</span>
 					</label>
 				))}
@@ -517,7 +517,7 @@ export function DatabaseTimeline({ dbFile, manager, externalView, onViewChange }
 				<button className="nb-menu-item" onClick={() => addFilter('_title', 'Nome', '📄', 'title')}>
 					<span className="nb-menu-item-icon">📄</span><span>{t('name_column')}</span>
 				</button>
-				{config.schema.map(col => (
+				{viewPropertyColumns.map(col => (
 					<button key={col.id} className="nb-menu-item" onClick={() => addFilter(col.id, col.name, getColumnIconStatic(col.type), col.type)}>
 						<span className="nb-menu-item-icon">{getColumnIconStatic(col.type)}</span><span>{col.name}</span>
 					</button>
@@ -575,10 +575,10 @@ export function DatabaseTimeline({ dbFile, manager, externalView, onViewChange }
 					{fieldsMenuOpen && (
 						<div className="nb-fields-dropdown">
 							<div className="nb-fields-dropdown-label">{t('fields_on_bars')}</div>
-							{config.schema.map(col => (
+							{fieldMenuColumns.map(col => (
 								<label key={col.id} className="nb-field-row">
-									<input type="checkbox" className="nb-field-checkbox" checked={col.visible && !activeView.hiddenColumns.includes(col.id)} onChange={() => { void toggleFieldVisibility(col.id) }} />
-									<span className="nb-field-icon">{getColumnIconStatic(col.type)}</span>
+									<input type="checkbox" className="nb-field-checkbox" checked={isPropertyVisibleInView(col, activeView)} onChange={() => { void toggleFieldVisibility(col.id) }} />
+									<span className="nb-field-icon">{getPropertyIcon(col) ?? getColumnIconStatic(col.type)}</span>
 									<span className="nb-field-name">{col.name}</span>
 								</label>
 							))}
@@ -631,7 +631,7 @@ export function DatabaseTimeline({ dbFile, manager, externalView, onViewChange }
 							<button className="nb-menu-item" onClick={() => addFilter('_title', 'Nome', '📄', 'title')}>
 								<span className="nb-menu-item-icon">📄</span><span>{t('name_column')}</span>
 							</button>
-							{config.schema.map(col => (
+							{viewPropertyColumns.map(col => (
 								<button key={col.id} className="nb-menu-item" onClick={() => addFilter(col.id, col.name, getColumnIconStatic(col.type), col.type)}>
 									<span className="nb-menu-item-icon">{getColumnIconStatic(col.type)}</span><span>{col.name}</span>
 								</button>
@@ -644,7 +644,7 @@ export function DatabaseTimeline({ dbFile, manager, externalView, onViewChange }
 			{/* Filter pills */}
 			<FilterPillsRow
 				activeFilters={activeFilters}
-				schema={config.schema}
+				schema={effectiveSchema}
 				onUpdate={updateFilter}
 				onRemove={removeFilter}
 				onToggleConjunction={toggleConj}
@@ -676,16 +676,8 @@ export function DatabaseTimeline({ dbFile, manager, externalView, onViewChange }
 									<span>{item.label}</span>
 								</div>
 							) : (
-								<div key={item.row._file.path} className="nb-tl-sidebar-row" style={{ height: ROW_H }}
-									onClick={() => { void app.workspace.getLeaf().openFile(item.row._file) }}>
-									<span className="nb-tl-row-label">{item.row._title}</span>
-									{(() => {
-										const dbFolder = dbFile?.parent?.path ?? ''
-										const fileFolder = item.row._file.parent?.path ?? ''
-										const relPath = activeView.includeSubfolders && fileFolder.length > dbFolder.length
-											? fileFolder.slice(dbFolder.length + 1) : ''
-										return relPath ? <div className="nb-folder-path">{relPath}</div> : null
-									})()}
+								<div key={item.row._file.path} className="nb-tl-sidebar-row" style={{ height: ROW_H }}>
+									<EditableTitle title={item.row._title} file={item.row._file} manager={manager} onOpen={openFile} className="nb-tl-row-label" />
 								</div>
 							))}
 						</div>
@@ -733,10 +725,9 @@ export function DatabaseTimeline({ dbFile, manager, externalView, onViewChange }
 													barWidth={bWidth}
 													origBarLeft={item.barLeft}
 													origBarWidth={item.barWidth}
-													isMobile={isMobile}
-													visibleCols={visibleCols}
-													dbFolderPath={dbFolderPath}
-													includeSubfolders={activeView.includeSubfolders ?? false}
+											isMobile={isMobile}
+											visibleCols={visibleCols}
+											manager={manager}
 													startFieldId={startField?.id ?? null}
 													endFieldId={endField?.id ?? null}
 													onOpen={openFile}
@@ -762,9 +753,8 @@ export function DatabaseTimeline({ dbFile, manager, externalView, onViewChange }
 					{noIntervalOpen && (
 						<div className="nb-tl-no-interval-list">
 							{noIntervalRows.map(row => (
-								<div key={row._file.path} className="nb-cal-card nb-cal-card--no-date"
-									onClick={() => { void app.workspace.getLeaf().openFile(row._file) }}>
-									<span className="nb-cal-card-title">{row._title}</span>
+								<div key={row._file.path} className="nb-cal-card nb-cal-card--no-date">
+									<EditableTitle title={row._title} file={row._file} manager={manager} onOpen={openFile} className="nb-cal-card-title" />
 								</div>
 							))}
 						</div>

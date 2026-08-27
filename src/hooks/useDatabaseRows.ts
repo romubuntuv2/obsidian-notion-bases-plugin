@@ -7,6 +7,7 @@ import {
 import { evaluateFormulas } from '../formula-engine'
 import { ActiveFilter, getColumnIconStatic } from '../components/filter-utils'
 import { t } from '../i18n'
+import { migrateLegacyVirtualProperties, resolveEffectiveSchema } from '../virtual-properties'
 
 const CHUNK_SIZE = 200
 const CHUNK_THRESHOLD = 100
@@ -24,6 +25,7 @@ interface UseDatabaseRowsOptions {
 interface UseDatabaseRowsResult {
 	rows: NoteRow[]
 	config: DatabaseConfig
+	effectiveSchema: ColumnSchema[]
 	loading: boolean
 	activeFilters: ActiveFilter[]
 	setActiveFilters: Dispatch<SetStateAction<ActiveFilter[]>>
@@ -95,6 +97,7 @@ export function useDatabaseRows(options: UseDatabaseRowsOptions): UseDatabaseRow
 
 	const [rows, setRows] = useState<NoteRow[]>([])
 	const [config, setConfig] = useState<DatabaseConfig>(DEFAULT_DATABASE_CONFIG)
+	const [effectiveSchema, setEffectiveSchema] = useState<ColumnSchema[]>(() => resolveEffectiveSchema([]).schema)
 	const [loading, setLoading] = useState(true)
 	const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([])
 
@@ -106,23 +109,26 @@ export function useDatabaseRows(options: UseDatabaseRowsOptions): UseDatabaseRow
 		setLoading(true)
 		const version = ++loadVersion.current
 
-		const cfg = manager.readConfig(dbFile)
+		const migration = migrateLegacyVirtualProperties(manager.readConfig(dbFile))
+		const cfg = migration.config
+		if (migration.migrated) await manager.writeConfig(dbFile, cfg)
 		const notes = manager.getNotesInDatabase(dbFile, includeSubfolders)
 
 		if (cfg.schema.length === 0 && notes.length > 0) {
 			cfg.schema = await manager.inferSchema(notes)
 			await manager.writeConfig(dbFile, cfg)
 		}
+		const resolvedSchema = resolveEffectiveSchema(cfg.schema).schema
 
-		const rawRows = await processRowsInChunks(notes, cfg.schema, manager, loadVersion, version)
+		const rawRows = await processRowsInChunks(notes, resolvedSchema, manager, loadVersion, version)
 		if (!rawRows) return
 
 		const noteRows = manager.resolveRollupsForRows(
 			manager.resolveLookupsForRows(
-				evaluateFormulas(rawRows, cfg.schema),
-				cfg.schema,
+				evaluateFormulas(rawRows, resolvedSchema),
+				resolvedSchema,
 			),
-			cfg.schema,
+			resolvedSchema,
 		)
 
 		if (loadVersion.current !== version) return
@@ -130,10 +136,11 @@ export function useDatabaseRows(options: UseDatabaseRowsOptions): UseDatabaseRow
 		if (!filtersInitialized.current) {
 			filtersInitialized.current = true
 			const pills = externalView.activePills ?? []
-			setActiveFilters(restoreFilterPills(pills, cfg.schema))
+			setActiveFilters(restoreFilterPills(pills, resolvedSchema))
 		}
 
 		setConfig({ schema: cfg.schema, views: cfg.views })
+		setEffectiveSchema(resolvedSchema)
 		setRows(noteRows)
 		onLoaded?.(cfg, noteRows)
 		setLoading(false)
@@ -162,5 +169,5 @@ export function useDatabaseRows(options: UseDatabaseRowsOptions): UseDatabaseRow
 		}
 	}, [app, loadData])
 
-	return { rows, config, loading, activeFilters, setActiveFilters, reload: loadData }
+	return { rows, config, effectiveSchema, loading, activeFilters, setActiveFilters, reload: loadData }
 }

@@ -24,6 +24,10 @@ import {
 	buildCalendarGrid, buildWeekGrid, dateKey, formatWeekRange, monthsLong, parseDateValue,
 } from './Calendar/calendar-utils'
 import { showNoteContextMenu } from './ContextMenu/showNoteContextMenu'
+import {
+	getFieldMenuColumns, getPropertyCapabilities, getPropertyIcon, getViewPropertyColumns, getVisibleViewProperties,
+	isPropertyVisibleInView, toggleViewProperty,
+} from '../virtual-properties'
 
 interface DatabaseCalendarProps {
 	dbFile: TFile | null
@@ -36,7 +40,7 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 	const app = useApp()
 	const { status: saveStatus, trackSave } = useSaveTracker()
 	const today = new Date()
-	const { rows, config, loading, activeFilters, setActiveFilters } = useDatabaseRows({
+	const { rows, config, effectiveSchema, loading, activeFilters, setActiveFilters } = useDatabaseRows({
 		app, dbFile, manager, includeSubfolders: externalView.includeSubfolders, externalView,
 	})
 	const [activeView, setActiveView] = useState<ViewConfig>(externalView)
@@ -120,18 +124,20 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 	const filteredRows = useMemo(() => applyFilters(rows, debouncedFilters), [rows, debouncedFilters])
 
 	const dateField = useMemo(
-		() => config.schema.find(c => c.id === activeView.calendarDateField) ?? null,
+		() => config.schema.find(c => c.id === activeView.calendarDateField && c.type === 'date'
+			&& getPropertyCapabilities(c).editable) ?? null,
 		[config.schema, activeView.calendarDateField]
 	)
 
 	const visibleCols = useMemo(
-		() => config.schema.filter(col => col.visible && !activeView.hiddenColumns.includes(col.id)),
-		[config.schema, activeView.hiddenColumns]
+		() => getVisibleViewProperties(effectiveSchema, activeView),
+		[effectiveSchema, activeView]
 	)
-	const visibleDateCols = useMemo(
-		() => visibleCols.filter(col => col.type === 'date' && !col.systemField),
-		[visibleCols]
-	)
+	const compactCardColumns = useMemo(() => visibleCols.filter(col =>
+		(col.type === 'date' && getPropertyCapabilities(col).editable) || col.propertyScope === 'virtual'
+	), [visibleCols])
+	const viewPropertyColumns = useMemo(() => getViewPropertyColumns(effectiveSchema), [effectiveSchema])
+	const fieldMenuColumns = getFieldMenuColumns(effectiveSchema)
 
 	const calendarCells = useMemo(() => buildCalendarGrid(currentYear, currentMonth), [currentYear, currentMonth])
 
@@ -235,11 +241,10 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 	const toggleConjunction = (id: string) => { const next = activeFilters.map(f => f.id === id ? { ...f, conjunction: f.conjunction === 'and' ? 'or' as const : 'and' as const } : f); setActiveFilters(next); void saveActivePills(next) }
 
 	const toggleFieldVisibility = useCallback(async (fieldId: string) => {
-		const hidden = activeView.hiddenColumns.includes(fieldId)
-			? activeView.hiddenColumns.filter(id => id !== fieldId)
-			: [...activeView.hiddenColumns, fieldId]
-		await saveView({ ...activeView, hiddenColumns: hidden })
-	}, [activeView, saveView])
+		const column = effectiveSchema.find(candidate => candidate.id === fieldId)
+		if (!column) return
+		await saveView(toggleViewProperty(activeView, column))
+	}, [activeView, effectiveSchema, saveView])
 
 	const goToPrev = () => {
 		if (viewMode === 'week') {
@@ -341,7 +346,7 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 								<span className="nb-menu-item-icon">—</span>
 								<span>{t('none_value')}</span>
 							</button>
-							{config.schema.filter(c => c.type === 'date').map(col => (
+							{config.schema.filter(c => c.type === 'date' && getPropertyCapabilities(c).editable).map(col => (
 								<button
 									key={col.id}
 									className={`nb-menu-item${activeView.calendarDateField === col.id ? ' nb-menu-item--active' : ''}`}
@@ -363,10 +368,10 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 					{fieldsMenuOpen && (
 						<div className="nb-fields-dropdown">
 							<div className="nb-fields-dropdown-label">{t('fields_label')}</div>
-							{config.schema.map(col => (
+							{fieldMenuColumns.map(col => (
 								<label key={col.id} className="nb-field-row">
-									<input type="checkbox" className="nb-field-checkbox" checked={col.visible && !activeView.hiddenColumns.includes(col.id)} onChange={() => { void toggleFieldVisibility(col.id) }} />
-									<span className="nb-field-icon">{getColumnIconStatic(col.type)}</span>
+									<input type="checkbox" className="nb-field-checkbox" checked={isPropertyVisibleInView(col, activeView)} onChange={() => { void toggleFieldVisibility(col.id) }} />
+									<span className="nb-field-icon">{getPropertyIcon(col) ?? getColumnIconStatic(col.type)}</span>
 									<span className="nb-field-name">{col.name}</span>
 								</label>
 							))}
@@ -422,7 +427,7 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 							<button className="nb-menu-item" onClick={() => addFilter('_title', 'Nome', '📄', 'title')}>
 								<span className="nb-menu-item-icon">📄</span><span>{t('name_column')}</span>
 							</button>
-							{config.schema.map(col => (
+							{viewPropertyColumns.map(col => (
 								<button key={col.id} className="nb-menu-item" onClick={() => addFilter(col.id, col.name, getColumnIconStatic(col.type), col.type)}>
 									<span className="nb-menu-item-icon">{getColumnIconStatic(col.type)}</span>
 									<span>{col.name}</span>
@@ -447,7 +452,7 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 					{cfPanelOpen && (
 						<ConditionalFormatPanel
 							rules={activeView.conditionalFormats ?? []}
-							schema={config.schema}
+							schema={effectiveSchema}
 							onChange={rules => { void saveView({ ...activeView, conditionalFormats: rules }) }}
 							onClose={() => setCfPanelOpen(false)}
 						/>
@@ -458,7 +463,7 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 			{/* Filter pills */}
 			<FilterPillsRow
 				activeFilters={activeFilters}
-				schema={config.schema}
+				schema={effectiveSchema}
 				onUpdate={updateFilter}
 				onRemove={removeFilter}
 				onToggleConjunction={toggleConjunction}
@@ -479,7 +484,7 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 			) : (
 				<div className='nb-cal-view'>
 					{viewMode === 'week' ?
-						<DatabaseWeekView dateField={dateField} visibleDateColumns={visibleDateCols}
+						<DatabaseWeekView dateField={dateField} visibleColumns={compactCardColumns}
 							manager={manager} weekDays={weekDays} rowsByDate={rowsByDate}
 							today={today} nowMinutes={nowMinutes} bodyRef={weekBodyRef}
 							onDayClick={handleDayClick} onCardDragStart={handleCardDragStart}
@@ -488,14 +493,14 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 							onCardContextMenu={handleCardContextMenu} />
 						: <DatabaseMonthView calendarCells={calendarCells} cellProps={{
 							currentYear, currentMonth, todayDay, dragOverDay, rowsByDate,
-							dbFile, manager, activeView, dateField, schema: config.schema, visibleColumns: visibleCols,
+							manager, activeView, dateField, schema: effectiveSchema, visibleColumns: visibleCols,
 							onOpenFile: openFile, onDayClick: handleDayClick, onCardDragStart: handleCardDragStart,
 							onCardContextMenu: handleCardContextMenu,
 							onDayDragOver: handleDayDragOver, onDayDragLeave: handleDayDragLeave, onDayDrop: handleDayDrop,
 						}} />
 					}
-					{noDateRows.length > 0 && <DatabaseNoDateRows rows={noDateRows} dbFile={dbFile}
-						manager={manager} activeView={activeView} visibleDateColumns={visibleDateCols} onOpenFile={openFile}
+					{noDateRows.length > 0 && <DatabaseNoDateRows rows={noDateRows}
+						manager={manager} visibleColumns={compactCardColumns} onOpenFile={openFile}
 						onCardDragStart={handleCardDragStart} onCardContextMenu={handleCardContextMenu} />}
 				</div>
 			)}

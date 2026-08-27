@@ -31,6 +31,10 @@ import { createPortal } from 'react-dom'
 import { useApp } from '../context'
 import { runtimePrefs } from '../runtime-prefs'
 import { DatabaseManager } from '../database-manager'
+import {
+	getFieldMenuColumns, getPropertyCapabilities, getPropertyIcon, getSelectedVirtualProperties, getViewPropertyColumns,
+	getVirtualPropertyById, isPropertyVisibleInView, toggleVirtualProperty, updateVirtualProperty,
+} from '../virtual-properties'
 import { ColumnSchema, ColumnType, ConditionalFormatRule, DatabaseConfig, FilterOperator, NoteRow, SortConfig, ViewConfig, AggregationType, DEFAULT_DATABASE_CONFIG, DEFAULT_VIEW } from '../types'
 import { useDatabaseRows } from '../hooks/useDatabaseRows'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
@@ -761,7 +765,7 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 		setPinnedColumnId((externalView ?? cfg.views[0])?.pinnedColumnId ?? null)
 	}, [app, manager, externalView])
 
-	const { rows: hookRows, config: hookConfig, loading, activeFilters, setActiveFilters } = useDatabaseRows({
+	const { rows: hookRows, config: hookConfig, effectiveSchema, loading, activeFilters, setActiveFilters } = useDatabaseRows({
 		app, dbFile, manager, includeSubfolders: externalView?.includeSubfolders, externalView: externalView ?? DEFAULT_VIEW, onLoaded,
 	})
 	const [rows, setRows] = useState<NoteRow[]>([])
@@ -820,21 +824,28 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 
 	// View ativa: embed usa estado local; database usa config.views[0]
 	const activeView: ViewConfig = (externalView ? localEmbedView : undefined) ?? config.views[0] ?? DEFAULT_VIEW
+	const viewPropertyColumns = useMemo(() => getViewPropertyColumns(effectiveSchema), [effectiveSchema])
+	const fieldMenuColumns = getFieldMenuColumns(effectiveSchema)
+	const selectedVirtualColumns = useMemo(
+		() => getSelectedVirtualProperties(effectiveSchema, activeView.virtualColumnIds),
+		[effectiveSchema, activeView.virtualColumnIds],
+	)
 
 	// Sync sorting state when activeView changes (e.g. embed switching)
 	useEffect(() => {
 		setSorting(activeView.sorts.map(s => ({ id: s.columnId, desc: s.direction === 'desc' })))
 	}, [activeView.id])
 
-	// Schema ordenado: no embed usa columnOrder da view; no database usa a ordem do schema
+	// Ordered display schema includes selected virtual properties without persisting them locally.
 	const orderedSchema = useMemo(() => {
-		const order = externalView ? activeView.columnOrder : undefined
-		if (!order || order.length === 0) return config.schema
-		const map = new Map(config.schema.map(c => [c.id, c]))
+		const candidates = [...config.schema, ...selectedVirtualColumns]
+		const order = activeView.columnOrder
+		if (!order || order.length === 0) return candidates
+		const map = new Map(candidates.map(c => [c.id, c]))
 		const sorted = order.flatMap(id => map.has(id) ? [map.get(id)!] : [])
-		const rest = config.schema.filter(c => !order.includes(c.id))
+		const rest = candidates.filter(c => !order.includes(c.id))
 		return [...sorted, ...rest]
-	}, [externalView, activeView.columnOrder, config.schema])
+	}, [activeView.columnOrder, config.schema, selectedVirtualColumns])
 
 	// Salva view: embed atualiza estado local + persiste via callback; database escreve no frontmatter
 	const saveView = useCallback(async (updatedView: ViewConfig) => {
@@ -859,8 +870,8 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 		const row = filteredRowsRef.current[rowIndex]
 		if (!row) return
 
-		// System columns mirror file.stat — never written to frontmatter
-		if (config.schema.find(c => c.id === columnId)?.systemField) return
+		const column = config.schema.find(c => c.id === columnId) ?? getVirtualPropertyById(columnId)
+		if (column && !getPropertyCapabilities(column).editable) return
 
 		// Atualização otimista — match by file path to update the correct row in full array
 		setRows(prev => prev.map(r =>
@@ -868,8 +879,8 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 		))
 
 		const saveOp = async () => {
-			if (columnId === '_title') {
-				await manager.renameNote(row._file, String(value))
+			if (column?.virtualSource) {
+				await updateVirtualProperty(manager, row._file, column.virtualSource, value)
 			} else {
 				await manager.updateNoteField(row._file, columnId, value, row._inlineFields)
 
@@ -1002,29 +1013,6 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 			),
 		})
 
-		// Coluna virtual _folder (antes do título, quando includeSubfolders está ativo)
-		if (activeView.includeSubfolders && !activeView.hiddenColumns.includes('_folder')) {
-			const dbFolder = dbFile?.parent?.path ?? ''
-			const dbFolderName = dbFolder.split('/').pop() || dbFolder || ''
-			cols.push({
-				id: '_folder',
-				accessorFn: row => {
-					const fileFolder = row._file.parent?.path ?? ''
-					return fileFolder.length > dbFolder.length ? fileFolder.slice(dbFolder.length + 1) : dbFolderName
-				},
-				size: activeView.columnWidths['_folder'] ?? 150,
-				enableColumnFilter: true,
-				enableSorting: true,
-				sortingFn: 'text',
-				header: () => (
-					<div className="nb-header-title">
-						<span>{t('folder_column')}</span>
-					</div>
-				),
-				cell: info => <span className="nb-folder-path nb-folder-path--cell">{info.getValue<string>()}/</span>,
-			})
-		}
-
 		// Coluna título
 		cols.push({
 			id: '_title',
@@ -1050,13 +1038,7 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 					</div>
 				)
 			},
-			cell: info => {
-				const dbFolder = dbFile?.parent?.path ?? ''
-				const fileFolder = info.row.original._file.parent?.path ?? ''
-				const relPath = activeView.includeSubfolders && fileFolder.length > dbFolder.length
-					? fileFolder.slice(dbFolder.length + 1)
-					: ''
-				return (
+			cell: info => (
 					<div>
 						<CellRenderer
 							col={{ id: '_title', name: 'Nome', type: 'title', visible: true }}
@@ -1065,16 +1047,14 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 							columnId="_title"
 							file={info.row.original._file}
 						/>
-						{relPath && <div className="nb-folder-path">{relPath}</div>}
 					</div>
-				)
-			},
+				),
 		})
 
 		// Colunas do schema
-		const visibleSchema = orderedSchema.filter(col =>
-			col.visible && !activeView.hiddenColumns.includes(col.id)
-		)
+		const visibleSchema = orderedSchema.filter(col => col.propertyScope === 'virtual'
+			? (activeView.virtualColumnIds ?? []).includes(col.id)
+			: col.visible && !activeView.hiddenColumns.includes(col.id))
 		for (const col of visibleSchema) {
 			cols.push({
 				id: col.id,
@@ -1083,7 +1063,11 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 				enableColumnFilter: col.type !== 'formula' && col.type !== 'lookup' && col.type !== 'relation',
 				enableSorting: col.type !== 'formula' && col.type !== 'lookup' && col.type !== 'relation' && col.type !== 'multiselect',
 			sortingFn: getColumnSortingFn(col.type),
-				header: () => (
+				header: () => col.propertyScope === 'virtual' ? (
+					<div className="nb-header-title">
+						<span>{getPropertyIcon(col) ?? getColumnIconStatic(col.type)}</span><span>{col.name}</span>
+					</div>
+				) : (
 					<ColumnHeader
 						col={col}
 						schema={config.schema}
@@ -1106,7 +1090,7 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 		}
 
 		return cols
-	}, [config, orderedSchema, activeView, updateSchema, renameColumn, handleChangeColumnType, manager, dbFile])
+	}, [config, orderedSchema, selectedVirtualColumns, activeView, updateSchema, renameColumn, handleChangeColumnType, manager, dbFile])
 
 	// ── Instância da tabela ──────────────────────────────────────────────────
 
@@ -1186,7 +1170,7 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 			updateCell,
 			editingCell,
 			setEditingCell,
-			schema: config.schema,
+			schema: effectiveSchema,
 		},
 	})
 
@@ -1353,9 +1337,9 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 	}, [getSelectedFiles, manager])
 
 	const handleExportCsv = useCallback(() => {
-		const visibleCols = orderedSchema.filter(col =>
-			col.visible && !activeView.hiddenColumns.includes(col.id)
-		)
+		const visibleCols = orderedSchema.filter(col => col.propertyScope === 'virtual'
+			? (activeView.virtualColumnIds ?? []).includes(col.id)
+			: col.visible && !activeView.hiddenColumns.includes(col.id))
 		const escapeCell = (v: unknown): string => {
 				const s = v === null || v === undefined ? '' : stringifyScalar(v)
 			if (s.includes(',') || s.includes('"') || s.includes('\n')) {
@@ -1380,7 +1364,7 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 		a.click()
 		URL.revokeObjectURL(url)
 		setActionsMenuOpen(false)
-	}, [orderedSchema, activeView.hiddenColumns, filteredRows, dbFile, app])
+	}, [orderedSchema, activeView.hiddenColumns, activeView.virtualColumnIds, filteredRows, dbFile, app])
 
 	const handleImportCsv = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
 		const csvFile = e.target.files?.[0]
@@ -1627,6 +1611,11 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 	// ── Toggle visibilidade de um campo ──────────────────────────────────────
 
 	const toggleFieldVisibility = useCallback(async (fieldId: string) => {
+		const virtualColumn = getVirtualPropertyById(fieldId)
+		if (virtualColumn?.virtualSource && virtualColumn.virtualSource !== 'title') {
+			await saveView({ ...activeView, virtualColumnIds: toggleVirtualProperty(activeView.virtualColumnIds, fieldId) })
+			return
+		}
 		if (externalView) {
 			const hidden = activeView.hiddenColumns.includes(fieldId)
 				? activeView.hiddenColumns.filter(id => id !== fieldId)
@@ -1639,6 +1628,11 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 			await updateSchema(newSchema)
 		}
 	}, [externalView, activeView, saveView, config.schema, updateSchema])
+
+	const isFieldVisible = useCallback((column: ColumnSchema) => column.propertyScope === 'virtual'
+		? isPropertyVisibleInView(column, activeView)
+		: (externalView ? column.visible && !activeView.hiddenColumns.includes(column.id) : column.visible),
+	[activeView, externalView])
 
 	// ── Reordenar colunas via drag ────────────────────────────────────────────
 
@@ -1654,7 +1648,7 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 			const newOrder = arrayMove(orderedSchema, oldIndex, newIndex).map(c => c.id)
 			await saveView({ ...activeView, columnOrder: newOrder })
 		} else {
-			await updateSchema(arrayMove(config.schema, oldIndex, newIndex))
+			await updateSchema(arrayMove(orderedSchema, oldIndex, newIndex).filter(column => column.propertyScope !== 'virtual'))
 		}
 	}, [orderedSchema, externalView, activeView, saveView, config.schema, updateSchema])
 
@@ -1717,10 +1711,10 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 			onConjunctionToggle={toggleConjunction}
 		>
 			<BottomSheet open={fieldsMenuOpen} onClose={() => setFieldsMenuOpen(false)} title={t('fields')}>
-				{config.schema.map(col => (
+				{fieldMenuColumns.map(col => (
 					<label key={col.id} className="nb-field-row">
-						<input type="checkbox" className="nb-field-checkbox" checked={externalView ? col.visible && !activeView.hiddenColumns.includes(col.id) : col.visible} onChange={() => { void toggleFieldVisibility(col.id) }} />
-						<span className="nb-field-icon">{getColumnIcon(col.type)}</span>
+						<input type="checkbox" className="nb-field-checkbox" checked={isFieldVisible(col)} onChange={() => { void toggleFieldVisibility(col.id) }} />
+						<span className="nb-field-icon">{getPropertyIcon(col) ?? getColumnIcon(col.type)}</span>
 						<span className="nb-field-name">{col.name}</span>
 					</label>
 				))}
@@ -1748,7 +1742,7 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 				<button className="nb-menu-item" onClick={() => addFilter('_title', 'Nome', '📄', 'title')}>
 					<span className="nb-menu-item-icon">📄</span><span>{t('name_column')}</span>
 				</button>
-				{config.schema.map(col => (
+				{viewPropertyColumns.map(col => (
 					<button key={col.id} className="nb-menu-item" onClick={() => addFilter(col.id, col.name, getColumnIcon(col.type), col.type)}>
 						<span className="nb-menu-item-icon">{getColumnIcon(col.type)}</span><span>{col.name}</span>
 					</button>
@@ -1761,7 +1755,7 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 				{activeView.sorts.map((sort, idx) => {
 					const name = sort.columnId === '_title'
 						? 'Nome'
-						: (config.schema.find(c => c.id === sort.columnId)?.name ?? sort.columnId)
+						: (effectiveSchema.find(c => c.id === sort.columnId)?.name ?? sort.columnId)
 					return (
 						<div key={sort.columnId} className="nb-sort-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', minHeight: '44px' }}>
 							<div className="nb-sort-row-priority" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -1777,7 +1771,7 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 					)
 				})}
 				{(() => {
-					const sortableSchema = config.schema.filter(c => c.type !== 'formula' && c.type !== 'lookup' && c.type !== 'relation' && c.type !== 'multiselect')
+					const sortableSchema = viewPropertyColumns.filter(c => c.type !== 'formula' && c.type !== 'lookup' && c.type !== 'relation' && c.type !== 'multiselect')
 					const usedIds = new Set(activeView.sorts.map(s => s.columnId))
 					const available = [
 						...(!usedIds.has('_title') ? [{ id: '_title', name: 'Nome' }] : []),
@@ -1898,27 +1892,15 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 					{fieldsMenuOpen && (
 						<div className="nb-fields-dropdown">
 							<div className="nb-fields-dropdown-label">{t('fields_label')}</div>
-							{config.schema.map(col => (
+							{fieldMenuColumns.map(col => (
 								<label key={col.id} className="nb-field-row">
 									<input
 										type="checkbox"
 										className="nb-field-checkbox"
-										checked={externalView
-											? col.visible && !activeView.hiddenColumns.includes(col.id)
-											: col.visible}
+									checked={isFieldVisible(col)}
 										onChange={() => { void toggleFieldVisibility(col.id) }}
 									/>
-									<span className="nb-field-icon">{
-										col.type === 'text' ? 'Aa' :
-										col.type === 'number' ? '#' :
-										col.type === 'select' ? '◉' :
-										col.type === 'multiselect' ? '◈' :
-										col.type === 'date' ? '📅' :
-										col.type === 'checkbox' ? '☑' :
-										col.type === 'lookup' ? '↗' :
-										col.type === 'relation' ? '🔗' :
-									col.type === 'formula' ? 'ƒ' : '·'
-									}</span>
+									<span className="nb-field-icon">{getPropertyIcon(col) ?? getColumnIconStatic(col.type)}</span>
 									<span className="nb-field-name">{col.name}</span>
 								</label>
 							))}
@@ -2012,7 +1994,7 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 								<span className="nb-menu-item-icon">📄</span>
 								<span>{t('name_column')}</span>
 							</button>
-							{config.schema.map(col => (
+							{viewPropertyColumns.map(col => (
 								<button
 									key={col.id}
 									className="nb-menu-item"
@@ -2049,7 +2031,7 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 					{sortPanelOpen && sortAnchorRect && (
 						<SortPanel
 							sorts={activeView.sorts}
-							schema={config.schema}
+							schema={viewPropertyColumns}
 							onSortChange={s => { void handleSortChange(s) }}
 							onClose={() => setSortPanelOpen(false)}
 							anchorRect={sortAnchorRect}
@@ -2073,7 +2055,7 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 					{cfPanelOpen && (
 						<ConditionalFormatPanel
 							rules={activeView.conditionalFormats ?? []}
-							schema={config.schema}
+							schema={effectiveSchema}
 							onChange={rules => { void saveView({ ...activeView, conditionalFormats: rules }) }}
 							onClose={() => setCfPanelOpen(false)}
 						/>
@@ -2175,7 +2157,7 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 						isMultiValueFilter(filter) ? (
 							<div className="nb-filter-multi-select">
 								{(() => {
-									const col = config.schema.find(c => c.id === filter.columnId)
+									const col = effectiveSchema.find(c => c.id === filter.columnId)
 									const options = col?.options ?? []
 									const selectedValues = parseMultiValue(filter.value)
 									return options.length > 0 ? options.map(opt => (
@@ -2217,14 +2199,16 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 		</>)}
 
 		{/* Tabela */}
-			<CellContext.Provider value={{ editingCell, setEditingCell, updateCell, schema: config.schema, relationOptions, updateSchema }}>
+			<CellContext.Provider value={{ editingCell, setEditingCell, updateCell, schema: effectiveSchema, relationOptions, updateSchema }}>
 			<div ref={tableWrapperRef} className={`nb-table-wrapper${activeView.wrapText ? ' nb-table--wrap' : ''}${runtimePrefs.clipEllipsis ? '' : ' nb-clip-hard'}`}
 				style={{ '--nb-row-height': activeView.rowHeight === 'compact' ? '28px' : activeView.rowHeight === 'tall' ? '64px' : '36px' } as React.CSSProperties}>
 				<table ref={tableRef} className="nb-table">
 					<thead className="nb-thead">
 						{table.getHeaderGroups().map(group => {
 							const visibleSchemaIds = orderedSchema
-								.filter(c => c.visible && !activeView.hiddenColumns.includes(c.id))
+								.filter(c => c.propertyScope === 'virtual'
+									? (activeView.virtualColumnIds ?? []).includes(c.id)
+									: c.visible && !activeView.hiddenColumns.includes(c.id))
 								.map(c => c.id)
 							return (
 								<DndContext
@@ -2350,7 +2334,7 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 						onRowDragEnd={handleRowDragEnd}
 						onRowDrop={handleRowDrop}
 						conditionalFormats={activeView.conditionalFormats}
-						schema={config.schema}
+						schema={effectiveSchema}
 					/>
 					<tfoot className="nb-tfoot">
 					<tr>

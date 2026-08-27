@@ -19,6 +19,7 @@ interface CellProps {
 import { createContext, useContext } from 'react'
 import { stringifyScalar } from '../../value-utils'
 import { displayLocale, formatDateText } from '../../format-cell-value'
+import { getPropertyCapabilities } from '../../virtual-properties'
 
 interface CellContextType {
 	editingCell: { rowIndex: number; columnId: string } | null
@@ -132,10 +133,18 @@ export const CellRenderer = React.memo(function CellRenderer({ col, value, rowIn
 	const { editingCell, setEditingCell, updateCell, relationOptions } = useCellContext()
 	const app = useApp()
 	const isEditing = editingCell?.rowIndex === rowIndex && editingCell?.columnId === columnId
+	const capabilities = getPropertyCapabilities(col)
 
 	const startEditing = () => {
+		if (!capabilities.editable) return
 		if (col.type === 'formula' || col.type === 'lookup' || col.type === 'rollup' || col.type === 'checkbox') return
 		setEditingCell({ rowIndex, columnId })
+	}
+
+	if (!capabilities.editable && col.virtualSource && col.type !== 'date') {
+		return <div className="nb-cell-text nb-cell-system" title={t('system_field_readonly')}>
+			{stringifyScalar(value)}
+		</div>
 	}
 
 	switch (col.type) {

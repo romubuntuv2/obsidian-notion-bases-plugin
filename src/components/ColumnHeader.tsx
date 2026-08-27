@@ -558,18 +558,6 @@ export function ColumnHeader({ col, schema, onUpdateSchema, onRenameColumn, onCh
 		}
 	}
 
-	const handleSystemField = async (sf: 'ctime' | 'mtime') => {
-		// No onChangeType conversion prompt: frontmatter is left untouched, so
-		// switching back to a regular type restores the previous values.
-		const label = sf === 'ctime' ? t('created_time') : t('last_edited_time')
-		await updateCol({
-			type: 'date',
-			systemField: sf,
-			...(col.name === t('new_field') ? { name: label } : {}),
-		})
-		setMenuOpen(false)
-	}
-
 	const handleSaveFormula = async () => {
 		if (formulaError) return
 		await updateCol({ formula: formulaValue.trim() || undefined })
@@ -1325,24 +1313,11 @@ export function ColumnHeader({ col, schema, onUpdateSchema, onRenameColumn, onCh
 					{(['text', 'number', 'select', 'multiselect', 'date', 'checkbox', 'url', 'email', 'phone', 'status', 'formula', 'relation', 'lookup', 'rollup', 'image', 'audio', 'video'] as ColumnType[]).map(type => (
 						<button
 							key={type}
-							className={`nb-menu-item nb-menu-type-item ${col.type === type && !col.systemField ? 'nb-menu-item--active' : ''}`}
+							className={`nb-menu-item nb-menu-type-item ${col.type === type ? 'nb-menu-item--active' : ''}`}
 							onClick={() => { void handleTypeChange(type) }}
 						>
 							<span className="nb-menu-item-icon">{TYPE_ICONS[type]}</span>
 							<span>{TYPE_LABELS()[type]}</span>
-						</button>
-					))}
-
-					<div className="nb-menu-separator" />
-					<div className="nb-menu-label">{t('system_fields_label')}</div>
-					{([['ctime', t('created_time')], ['mtime', t('last_edited_time')]] as const).map(([sf, label]) => (
-						<button
-							key={sf}
-							className={`nb-menu-item nb-menu-type-item ${col.systemField === sf ? 'nb-menu-item--active' : ''}`}
-							onClick={() => { void handleSystemField(sf) }}
-						>
-							<span className="nb-menu-item-icon">{sf === 'ctime' ? '🕓' : '🖊'}</span>
-							<span>{label}</span>
 						</button>
 					))}
 

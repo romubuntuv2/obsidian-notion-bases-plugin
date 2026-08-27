@@ -15,6 +15,7 @@ import { DatabaseCalendar } from './DatabaseCalendar'
 import { DatabaseTimeline } from './DatabaseTimeline'
 import { DatabaseCharts } from './DatabaseCharts'
 import { t } from '../i18n'
+import { migrateLegacyVirtualProperties, resolveEffectiveSchema } from '../virtual-properties'
 
 interface DatabaseRootProps {
 	dbFile: TFile | null
@@ -79,8 +80,10 @@ export function DatabaseRoot({
 
 	useEffect(() => {
 		if (!dbFile || isForcedEmbed) return
-		const cfg = manager.readConfig(dbFile)
+		const migration = migrateLegacyVirtualProperties(manager.readConfig(dbFile))
+		const cfg = migration.config
 		setConfig(cfg)
+		if (migration.migrated) void writeConfigAndTrack(cfg)
 		if (isDirectMode) {
 			setActiveViewId(prev => (prev && cfg.views.some((v: ViewConfig) => v.id === prev)) ? prev : (cfg.views[0]?.id ?? ''))
 		} else if (isFreeEmbed && !embedInitialized) {
@@ -106,7 +109,7 @@ export function DatabaseRoot({
 		const onChange = (file: TFile) => {
 			if (file !== dbFile) return
 			if (pendingSelfWrites.current > 0) return
-			setConfig(manager.readConfig(dbFile))
+			setConfig(migrateLegacyVirtualProperties(manager.readConfig(dbFile)).config)
 		}
 		app.metadataCache.on('changed', onChange)
 		return () => app.metadataCache.off('changed', onChange)
@@ -496,13 +499,14 @@ export function DatabaseRoot({
 							const filters = restoreFilterPills(pills, config.schema)
 							if (filters.length === 0) return undefined
 							const notes = manager.getNotesInDatabase(dbFile, activeView.includeSubfolders)
-							const rawRows = notes.map(f => manager.getNoteDataSync(f, config.schema))
+							const effectiveSchema = resolveEffectiveSchema(config.schema).schema
+							const rawRows = notes.map(f => manager.getNoteDataSync(f, effectiveSchema))
 							const resolved = manager.resolveRollupsForRows(
 								manager.resolveLookupsForRows(
-									evaluateFormulas(rawRows, config.schema),
-									config.schema,
+									evaluateFormulas(rawRows, effectiveSchema),
+									effectiveSchema,
 								),
-								config.schema,
+								effectiveSchema,
 							)
 							const filtered = applyFilters(resolved, filters)
 							return new Set(filtered.map(r => r._file.path))

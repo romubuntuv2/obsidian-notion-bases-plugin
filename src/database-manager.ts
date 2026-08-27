@@ -15,6 +15,7 @@ import {
 import { parseInlineFields, frontmatterLineCount } from './inline-fields'
 import { TemplatePickerModal } from './template-picker-modal'
 import { formatTimestampLocal, isRecord, stringifyScalar } from './value-utils'
+import { readVirtualProperty } from './virtual-properties'
 
 export const DATABASE_MARKER = 'notion-bases'
 
@@ -71,6 +72,7 @@ export class DatabaseManager {
 		return {
 			schema,
 			views: Array.isArray(fm['views']) && (fm['views'] as unknown[]).length > 0 ? fm['views'] as ViewConfig[] : [DEFAULT_VIEW],
+			virtualPropertiesVersion: typeof fm['virtualPropertiesVersion'] === 'number' ? fm['virtualPropertiesVersion'] : undefined,
 			templatePath: typeof fm['templatePath'] === 'string' && fm['templatePath'] ? fm['templatePath'] : undefined,
 			templateFolder: typeof fm['templateFolder'] === 'string' && fm['templateFolder'] ? fm['templateFolder'] : undefined,
 			askTemplateOnCreate: fm['askTemplateOnCreate'] === true,
@@ -83,6 +85,7 @@ export class DatabaseManager {
 			fm[DATABASE_MARKER] = true
 			fm['schema'] = config.schema
 			fm['views'] = config.views
+			fm['virtualPropertiesVersion'] = config.virtualPropertiesVersion ?? 1
 			if (config.templatePath) fm['templatePath'] = config.templatePath
 			else delete fm['templatePath']
 			if (config.templateFolder) fm['templateFolder'] = config.templateFolder
@@ -138,10 +141,18 @@ export class DatabaseManager {
 		const row: NoteRow = {
 			_file: file,
 			_title: file.basename,
+			_parentFolder: file.parent?.path ?? '',
+			_path: file.path,
+			_ctime: formatTimestampLocal(file.stat.ctime),
+			_mtime: formatTimestampLocal(file.stat.mtime),
 		}
 
 		for (const col of schema) {
 			if (col.type === 'formula' || col.type === 'lookup' || col.type === 'rollup') continue
+			if (col.virtualSource) {
+				row[col.id] = readVirtualProperty(file, col.virtualSource)
+				continue
+			}
 			if (col.systemField) {
 				// System columns read the file's native timestamps, never frontmatter
 				row[col.id] = formatTimestampLocal(col.systemField === 'ctime' ? file.stat.ctime : file.stat.mtime)
@@ -761,6 +772,7 @@ export class DatabaseManager {
 			'    sorts: []',
 			'    hiddenColumns: []',
 			'    columnWidths: {}',
+			'virtualPropertiesVersion: 1',
 			'---',
 			'',
 			'> [!tip] Notion Bases',

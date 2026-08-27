@@ -3,6 +3,7 @@ import { ColumnSchema, NoteRow } from '../../types'
 import { DatabaseManager } from '../../database-manager'
 import { t } from '../../i18n'
 import EditableCardProperties from '../EditableFields/EditableCardProperties'
+import EditableTitle from '../EditableFields/EditableTitle'
 import { dateKey, daysShort, formatTime, parseDateValue } from './calendar-utils'
 import {
 	CardContextMenuHandler, CardDragHandler, DayClickHandler, DayDragLeaveHandler, DayDragOverHandler,
@@ -11,7 +12,7 @@ import {
 
 interface DatabaseWeekViewProps {
 	dateField: ColumnSchema
-	visibleDateColumns: ColumnSchema[]
+	visibleColumns: ColumnSchema[]
 	manager: DatabaseManager
 	weekDays: Date[]
 	rowsByDate: RowsByDate
@@ -28,7 +29,7 @@ interface DatabaseWeekViewProps {
 }
 
 export function DatabaseWeekView({
-	dateField, visibleDateColumns, manager, weekDays, rowsByDate, today, nowMinutes, bodyRef, onDayClick,
+	dateField, visibleColumns, manager, weekDays, rowsByDate, today, nowMinutes, bodyRef, onDayClick,
 	onCardDragStart, onDayDragOver, onDayDragLeave, onDayDrop, onOpenRow, onCardContextMenu,
 }: DatabaseWeekViewProps) {
 	const isToday = (date: Date) => date.getFullYear() === today.getFullYear()
@@ -53,8 +54,8 @@ export function DatabaseWeekView({
 						onDragStart={event => onCardDragStart(event, row)}
 						onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onCardContextMenu(event, row) }}
 						onClick={event => { event.stopPropagation(); onOpenRow(row) }}>
-						<span className="nb-cal-card-title">{row._title}</span>
-						<EditableCardProperties row={row} columns={visibleDateColumns} manager={manager} />
+						<EditableTitle title={row._title} file={row._file} manager={manager} onOpen={() => onOpenRow(row)} className="nb-cal-card-title" />
+						<EditableCardProperties row={row} columns={visibleColumns} manager={manager} />
 					</div>)}
 				</div>
 			})}
@@ -90,8 +91,8 @@ export function DatabaseWeekView({
 							onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onCardContextMenu(event, row) }}
 							onClick={event => { event.stopPropagation(); onOpenRow(row) }}
 							style={{ top: `${((parsed.hour * 60 + parsed.minute) / 1440) * 100}%` }}>
-							<div className="nb-cal-card-title-row"><span className="nb-cal-time-badge">{formatTime(parsed.hour, parsed.minute)}</span><span className="nb-cal-card-title">{row._title}</span></div>
-							<EditableCardProperties row={row} columns={visibleDateColumns} manager={manager} />
+							<div className="nb-cal-card-title-row"><span className="nb-cal-time-badge">{formatTime(parsed.hour, parsed.minute)}</span><EditableTitle title={row._title} file={row._file} manager={manager} onOpen={() => onOpenRow(row)} className="nb-cal-card-title" /></div>
+							<EditableCardProperties row={row} columns={visibleColumns} manager={manager} />
 						</div>
 					})}
 				</div>

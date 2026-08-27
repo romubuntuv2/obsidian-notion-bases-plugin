@@ -153,12 +153,18 @@ export default class NotionBasesPlugin extends Plugin {
 	}
 
 	async loadSettings() {
+		const loaded = (await this.loadData()) as Partial<NotionBasesSettings> | null
 		this.settings = Object.assign(
 			{},
 			DEFAULT_SETTINGS,
-			(await this.loadData()) as Partial<NotionBasesSettings>
+			loaded ?? {},
 		)
+		this.settings.virtualPropertyMenuVisibility = {
+			...DEFAULT_SETTINGS.virtualPropertyMenuVisibility,
+			...(loaded?.virtualPropertyMenuVisibility ?? {}),
+		}
 		runtimePrefs.clipEllipsis = this.settings.clipEllipsis
+		Object.assign(runtimePrefs.virtualPropertyMenuVisibility, this.settings.virtualPropertyMenuVisibility)
 	}
 
 	async saveSettings() {

@@ -22,6 +22,8 @@ import { usePagination } from '../hooks/usePagination'
 import { BottomSheet } from './BottomSheet'
 import { ConditionalFormatPanel } from './ConditionalFormatPanel'
 import { stringifyScalar } from '../value-utils'
+import { getFieldMenuColumns, getPropertyIcon, getViewPropertyColumns, getVisibleViewProperties, isPropertyVisibleInView, toggleViewProperty } from '../virtual-properties'
+import EditableTitle from './EditableFields/EditableTitle'
 
 interface DatabaseGalleryProps {
 	dbFile: TFile | null
@@ -110,14 +112,13 @@ interface GalleryCardProps {
 	cardSize: string
 	coverField: ColumnSchema | null
 	visibleCols: ColumnSchema[]
-	dbFolderPath: string
-	includeSubfolders: boolean
+	manager: DatabaseManager
 	onOpen: (file: TFile) => void
 	cardStyle?: React.CSSProperties
 }
 
 const GalleryCard = React.memo(function GalleryCard({
-	row, cardSize, coverField, visibleCols, dbFolderPath, includeSubfolders, onOpen, cardStyle,
+	row, cardSize, coverField, visibleCols, manager, onOpen, cardStyle,
 }: GalleryCardProps) {
 	const app = useApp()
 
@@ -127,10 +128,6 @@ const GalleryCard = React.memo(function GalleryCard({
 	const coverTextValue = coverField && coverField.type !== 'image'
 		? (coverField.type === 'title' ? row._title : String(((row as Record<string, unknown>)[coverField.id] as string | number | boolean | null | undefined) ?? ''))
 		: null
-
-	const fileFolder = row._file.parent?.path ?? ''
-	const relPath = includeSubfolders && fileFolder.length > dbFolderPath.length
-		? fileFolder.slice(dbFolderPath.length + 1) : ''
 
 	return (
 		<div
@@ -152,8 +149,7 @@ const GalleryCard = React.memo(function GalleryCard({
 				</div>
 			)}
 			<div className="nb-gallery-body">
-				<div className="nb-gallery-title">{row._title}</div>
-				{relPath ? <div className="nb-folder-path">{relPath}</div> : null}
+				<EditableTitle title={row._title} file={row._file} manager={manager} onOpen={onOpen} className="nb-gallery-title" />
 				{visibleCols.length > 0 && (
 					<div className="nb-gallery-props">
 						{visibleCols.map(col => {
@@ -176,7 +172,7 @@ const GalleryCard = React.memo(function GalleryCard({
 
 export function DatabaseGallery({ dbFile, manager, externalView, onViewChange }: DatabaseGalleryProps) {
 	const app = useApp()
-	const { rows, config, loading, activeFilters, setActiveFilters } = useDatabaseRows({
+	const { rows, config, effectiveSchema, loading, activeFilters, setActiveFilters } = useDatabaseRows({
 		app, dbFile, manager, includeSubfolders: externalView.includeSubfolders, externalView,
 	})
 	const [activeView, setActiveView] = useState<ViewConfig>(externalView)
@@ -268,9 +264,11 @@ export function DatabaseGallery({ dbFile, manager, externalView, onViewChange }:
 	const { pageItems: pagedRows, currentPage, totalPages, setPage } = usePagination(displayRows, manager.pageSize)
 
 	const visibleCols = useMemo(
-		() => config.schema.filter(col => col.visible && !activeView.hiddenColumns.includes(col.id)),
-		[config.schema, activeView.hiddenColumns]
+		() => getVisibleViewProperties(effectiveSchema, activeView),
+		[effectiveSchema, activeView]
 	)
+	const viewPropertyColumns = useMemo(() => getViewPropertyColumns(effectiveSchema), [effectiveSchema])
+	const fieldMenuColumns = getFieldMenuColumns(effectiveSchema)
 
 	const coverField = useMemo(
 		() => config.schema.find(c => c.id === activeView.galleryCoverField) ?? null,
@@ -296,11 +294,10 @@ export function DatabaseGallery({ dbFile, manager, externalView, onViewChange }:
 	const toggleConjunction = (id: string) => { const next = activeFilters.map(f => f.id === id ? { ...f, conjunction: f.conjunction === 'and' ? 'or' as const : 'and' as const } : f); setActiveFilters(next); void saveActivePills(next) }
 
 	const toggleFieldVisibility = useCallback(async (fieldId: string) => {
-		const hidden = activeView.hiddenColumns.includes(fieldId)
-			? activeView.hiddenColumns.filter(id => id !== fieldId)
-			: [...activeView.hiddenColumns, fieldId]
-		await saveView({ ...activeView, hiddenColumns: hidden })
-	}, [activeView, saveView])
+		const column = effectiveSchema.find(candidate => candidate.id === fieldId)
+		if (!column) return
+		await saveView(toggleViewProperty(activeView, column))
+	}, [activeView, effectiveSchema, saveView])
 
 	const handleSortChange = useCallback(async (newSorts: SortConfig[]) => {
 		await saveView({ ...activeView, sorts: newSorts })
@@ -311,7 +308,6 @@ export function DatabaseGallery({ dbFile, manager, externalView, onViewChange }:
 	// ── Render ───────────────────────────────────────────────────────────────
 
 	const isMobile = useIsMobile()
-	const dbFolderPath = dbFile?.parent?.path ?? ''
 	const openFile = useCallback((file: TFile) => { void app.workspace.getLeaf().openFile(file) }, [app])
 
 	if (!dbFile) return <div className="nb-empty-state"><p>{t('no_database_open')}</p></div>
@@ -342,10 +338,10 @@ export function DatabaseGallery({ dbFile, manager, externalView, onViewChange }:
 			onConjunctionToggle={toggleConjunction}
 		>
 			<BottomSheet open={fieldsMenuOpen} onClose={() => setFieldsMenuOpen(false)} title={t('fields')}>
-				{config.schema.map(col => (
+				{fieldMenuColumns.map(col => (
 					<label key={col.id} className="nb-field-row">
-						<input type="checkbox" className="nb-field-checkbox" checked={col.visible && !activeView.hiddenColumns.includes(col.id)} onChange={() => { void toggleFieldVisibility(col.id) }} />
-						<span className="nb-field-icon">{getColumnIconStatic(col.type)}</span>
+						<input type="checkbox" className="nb-field-checkbox" checked={isPropertyVisibleInView(col, activeView)} onChange={() => { void toggleFieldVisibility(col.id) }} />
+						<span className="nb-field-icon">{getPropertyIcon(col) ?? getColumnIconStatic(col.type)}</span>
 						<span className="nb-field-name">{col.name}</span>
 					</label>
 				))}
@@ -373,7 +369,7 @@ export function DatabaseGallery({ dbFile, manager, externalView, onViewChange }:
 				<button className="nb-menu-item" onClick={() => addFilter('_title', 'Nome', '📄', 'title')}>
 					<span className="nb-menu-item-icon">📄</span><span>{t('name_column')}</span>
 				</button>
-				{config.schema.map(col => (
+				{viewPropertyColumns.map(col => (
 					<button key={col.id} className="nb-menu-item" onClick={() => addFilter(col.id, col.name, getColumnIconStatic(col.type), col.type)}>
 						<span className="nb-menu-item-icon">{getColumnIconStatic(col.type)}</span>
 						<span>{col.name}</span>
@@ -387,7 +383,7 @@ export function DatabaseGallery({ dbFile, manager, externalView, onViewChange }:
 				{activeView.sorts.map((sort, idx) => {
 					const name = sort.columnId === '_title'
 						? 'Nome'
-						: (config.schema.find(c => c.id === sort.columnId)?.name ?? sort.columnId)
+						: (effectiveSchema.find(c => c.id === sort.columnId)?.name ?? sort.columnId)
 					return (
 						<div key={sort.columnId} className="nb-sort-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', minHeight: '44px' }}>
 							<div className="nb-sort-row-priority" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -403,7 +399,7 @@ export function DatabaseGallery({ dbFile, manager, externalView, onViewChange }:
 					)
 				})}
 				{(() => {
-					const sortableSchema = config.schema.filter(c => c.type !== 'formula' && c.type !== 'lookup' && c.type !== 'relation' && c.type !== 'multiselect')
+					const sortableSchema = viewPropertyColumns.filter(c => c.type !== 'formula' && c.type !== 'lookup' && c.type !== 'relation' && c.type !== 'multiselect')
 					const usedIds = new Set(activeView.sorts.map(s => s.columnId))
 					const available = [
 						...(!usedIds.has('_title') ? [{ id: '_title', name: 'Nome' }] : []),
@@ -438,10 +434,10 @@ export function DatabaseGallery({ dbFile, manager, externalView, onViewChange }:
 					{fieldsMenuOpen && (
 						<div className="nb-fields-dropdown">
 							<div className="nb-fields-dropdown-label">{t('fields_label')}</div>
-							{config.schema.map(col => (
+							{fieldMenuColumns.map(col => (
 								<label key={col.id} className="nb-field-row">
-									<input type="checkbox" className="nb-field-checkbox" checked={col.visible && !activeView.hiddenColumns.includes(col.id)} onChange={() => { void toggleFieldVisibility(col.id) }} />
-									<span className="nb-field-icon">{getColumnIconStatic(col.type)}</span>
+									<input type="checkbox" className="nb-field-checkbox" checked={isPropertyVisibleInView(col, activeView)} onChange={() => { void toggleFieldVisibility(col.id) }} />
+									<span className="nb-field-icon">{getPropertyIcon(col) ?? getColumnIconStatic(col.type)}</span>
 									<span className="nb-field-name">{col.name}</span>
 								</label>
 							))}
@@ -530,7 +526,7 @@ export function DatabaseGallery({ dbFile, manager, externalView, onViewChange }:
 							<button className="nb-menu-item" onClick={() => addFilter('_title', 'Nome', '📄', 'title')}>
 								<span className="nb-menu-item-icon">📄</span><span>{t('name_column')}</span>
 							</button>
-							{config.schema.map(col => (
+							{viewPropertyColumns.map(col => (
 								<button key={col.id} className="nb-menu-item" onClick={() => addFilter(col.id, col.name, getColumnIconStatic(col.type), col.type)}>
 									<span className="nb-menu-item-icon">{getColumnIconStatic(col.type)}</span>
 									<span>{col.name}</span>
@@ -555,7 +551,7 @@ export function DatabaseGallery({ dbFile, manager, externalView, onViewChange }:
 				{sortPanelOpen && sortAnchorRect && (
 					<GallerySortPanel
 						sorts={activeView.sorts}
-						schema={config.schema}
+						schema={viewPropertyColumns}
 						onSortChange={s => { void handleSortChange(s) }}
 						onClose={() => setSortPanelOpen(false)}
 						anchorRect={sortAnchorRect}
@@ -578,7 +574,7 @@ export function DatabaseGallery({ dbFile, manager, externalView, onViewChange }:
 					{cfPanelOpen && (
 						<ConditionalFormatPanel
 							rules={activeView.conditionalFormats ?? []}
-							schema={config.schema}
+							schema={effectiveSchema}
 							onChange={rules => { void saveView({ ...activeView, conditionalFormats: rules }) }}
 							onClose={() => setCfPanelOpen(false)}
 						/>
@@ -589,7 +585,7 @@ export function DatabaseGallery({ dbFile, manager, externalView, onViewChange }:
 			{/* Filter pills */}
 			<FilterPillsRow
 				activeFilters={activeFilters}
-				schema={config.schema}
+				schema={effectiveSchema}
 				onUpdate={updateFilter}
 				onRemove={removeFilter}
 				onToggleConjunction={toggleConjunction}
@@ -606,7 +602,7 @@ export function DatabaseGallery({ dbFile, manager, externalView, onViewChange }:
 			{/* Gallery grid */}
 			<div className="nb-gallery" style={{ gridTemplateColumns: gridTemplate }}>
 				{pagedRows.map(row => {
-					const cfStyle = activeView.conditionalFormats?.length ? getCardConditionalStyle(row, activeView.conditionalFormats, config.schema) : undefined
+					const cfStyle = activeView.conditionalFormats?.length ? getCardConditionalStyle(row, activeView.conditionalFormats, effectiveSchema) : undefined
 					return (
 						<GalleryCard
 							key={row._file.path}
@@ -614,8 +610,7 @@ export function DatabaseGallery({ dbFile, manager, externalView, onViewChange }:
 							cardSize={cardSize}
 							coverField={coverField}
 							visibleCols={visibleCols}
-							dbFolderPath={dbFolderPath}
-							includeSubfolders={activeView.includeSubfolders ?? false}
+							manager={manager}
 							onOpen={openFile}
 							cardStyle={cfStyle}
 						/>

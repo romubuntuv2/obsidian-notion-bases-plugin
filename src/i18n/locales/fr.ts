@@ -106,6 +106,7 @@ const fr: Partial<Record<keyof typeof en, string>> = {
 	system_fields_label: 'Champs système',
 	created_time: 'Date de création',
 	last_edited_time: 'Dernière modification',
+	file_path: 'Chemin du fichier',
 	system_field_readonly: 'Champ en lecture seule issu des métadonnées du fichier',
 	hide_field: 'Masquer le champ',
 	enable_wrap_text: 'Retour à la ligne',
@@ -467,6 +468,9 @@ const fr: Partial<Record<keyof typeof en, string>> = {
 	settings_db_filename_desc: 'Nom du fichier spécial qui identifie une base de données dans un dossier.',
 	settings_row_height_name: 'Hauteur de ligne par défaut',
 	settings_row_height_desc: 'Hauteur en pixels de chaque ligne du tableau.',
+	settings_virtual_fields_heading: 'Propriétés virtuelles dans les menus Champs',
+	settings_virtual_fields_desc: 'Choisissez les propriétés natives proposées à l\'ouverture du menu Champs d\'une vue. Les sélections existantes et les données ne sont pas supprimées.',
+	settings_virtual_field_toggle_desc: 'Afficher cette propriété virtuelle dans les menus Champs.',
 
 	// Inline fields
 	settings_inline_fields_name: 'Lire les champs inline dataview',

@@ -5,12 +5,10 @@
 
 ## Current focus
 
-The Calendar component split is complete. The next planned Calendar feature remains a
-per-view setting for choosing Sunday or Monday as the first day of the week.
-
-The current implementation is Monday-first in both month and week views. Any future
-week-start setting must preserve that behavior as the compatibility fallback unless a
-migration decision explicitly changes it.
+The agreed first version of virtual properties is complete. The next property-scope
+milestone is the separate shared-property registry; it is designed below but not yet
+implemented. The next planned Calendar feature remains a per-view setting for choosing
+Sunday or Monday as the first day of the week.
 
 ## Supported platform
 
@@ -103,6 +101,109 @@ Confirmed visual behavior on Calendar monthly cards:
 - an empty selector shows a small gray placeholder with a centered dash;
 - the empty placeholder is aligned left and uses approximately one quarter of the card width,
   constrained between 48 px and 88 px.
+
+### Property scopes
+
+The target property model has three distinct scopes:
+
+1. **Database properties** belong to one specific database. Their schema, type, options,
+   and presentation are configured locally in that database's `_database.md`. Adding or
+   removing a select option affects only that database.
+2. **Virtual properties** project native Obsidian/file information without duplicating it
+   into note frontmatter. The initial catalog should include title, parent folder, path,
+   creation date, and last-modified date. Each virtual source defines its own capability:
+   only title is editable and maps to a real file rename. Parent folder, path, creation
+   date, and last-modified date are read-only. Moving a note remains a separate Obsidian
+   file operation rather than an inline virtual-property edit.
+3. **Shared properties** have one stable definition that is available to every database.
+   A database references the shared definition instead of copying it. The property value
+   still belongs to each note, but its name, type, and select/status options come from the
+   shared definition. Updating those options must immediately affect every database that
+   references the property.
+
+The canonical example is a shared `type` selector with options such as `Todo`, `Post`,
+and `Event`. Parent and child-folder databases reference the same shared-property ID and
+frontmatter key, so the same note value and option catalog are understood consistently
+throughout the hierarchy. Availability across databases does not necessarily mean that
+the property must be displayed in every database: inclusion and view presentation remain
+database-local.
+
+The shared-property catalog is persisted in `register_shared_propertiers.md` at the vault
+root. Shared properties are attached explicitly and manually to each database. There is
+no parent-to-child inheritance: a parent database and a child-folder database share a
+property only when both independently reference the same shared-property ID.
+
+Current implementation status:
+
+- [x] Local per-database schemas already exist.
+- [x] Title is sourced from `TFile.basename` as `_title`; Table uses the shared virtual
+  mutation path, while Board, Calendar, List, Gallery, and Timeline use `EditableTitle`.
+  It participates in filters, sorts, formulas, relations, and lookups.
+- [x] Creation and modification timestamps come only from canonical read-only `_ctime`
+  and `_mtime` properties backed by `TFile.stat`; legacy local `systemField` definitions
+  are migrated automatically and are no longer offered for creation.
+- [x] Parent-folder information comes from canonical `_parentFolder` backed by
+  `TFile.parent.path`; all view-specific `_folder` and relative-label paths were removed.
+- [x] Vault-relative file path is already available internally through `row._file.path`
+  for identity, drag/drop, ordering, selection, and file operations.
+- [x] `ColumnSchema` now declares `propertyScope` and `virtualSource`, with stable sources
+  for title, parent folder, path, creation time, and modification time.
+- [x] `resolveEffectiveSchema()` keeps local definitions separate and injects canonical
+  virtual definitions without writing them to `_database.md`.
+- [x] Every row now carries `_title`, `_parentFolder`, `_path`, `_ctime`, and `_mtime`
+  directly from `TFile` metadata.
+- [x] Capability metadata marks title as the sole editable virtual source; both Table and
+  `EditableTitle` route edits through `updateVirtualProperty() → renameNote()`.
+- [x] Every view uses the shared title-editing path wherever it renders an interactive
+  note title.
+- [x] Canonical `_parentFolder`, `_path`, `_ctime`, and `_mtime` can be enabled independently
+  in each view through `virtualColumnIds`; they are read-only and hidden by default.
+- [x] Global plugin settings control which virtual properties are offered in Fields menus;
+  parent folder/path default to visible, while creation/modification timestamps default to
+  hidden and can be re-enabled without removing saved view selections.
+- [x] Fields menus use dedicated virtual icons: folder (`📁`), file path (`🧭`), creation
+  time (`🕓`), and modification time (`🖊`).
+- [x] The effective schema now feeds view field menus, restored filters, sorts, formulas,
+  charts, conditional formatting, and read-only card/list/table rendering.
+- [x] Calendar and Timeline accept only editable local date properties as mutable layout
+  fields; canonical and legacy system timestamps are excluded from drag/resize writes.
+- [x] Legacy `_folder` view references and local `systemField` timestamp definitions are
+  migrated once to canonical virtual IDs. Filters, sorts, pills, order, widths,
+  aggregations, conditional formatting, pinned columns, formulas, references, and chart
+  axes are remapped; read-only dates are removed from mutable Calendar/Timeline layouts.
+- [x] A unified virtual-property resolver and centralized read/edit/frontmatter
+  capabilities now exist in `src/virtual-properties.ts`.
+- [x] Dedicated tests cover the catalog, effective schema composition, reserved-ID
+  collisions, canonical row hydration, title-only mutation, per-view selection,
+  filter/sort/formula consumption, complete legacy migration, and migration idempotence.
+- [ ] No shared-property registry, stable shared-property reference, or propagation path
+  exists yet.
+- [x] Collision behavior is defined: attaching or creating a shared property is blocked
+  when the database already has a local property with the same storage key.
+
+Confirmed design decisions:
+
+- the registry is `register_shared_propertiers.md` at the vault root;
+- databases attach shared properties manually, with no hierarchy inheritance;
+- attached databases cannot override a shared property's canonical name, type, or
+  options; only view presentation remains local;
+- title is the only editable virtual property and renames the actual file;
+- parent folder, path, creation date, and modification date are read-only;
+- deleting a shared option requires an impact scan and an explicit decision to replace,
+  clear, or preserve affected note values as historical values;
+- deleting a shared property converts every database reference into an independent local
+  property cloned from the last shared definition, while leaving note values untouched;
+- no automatic or assisted local-to-shared conversion exists; a duplicate storage key is
+  a blocking collision and produces no mutation.
+
+The registry's frontmatter marker and the exact wording/presentation of destructive-action
+dialogs remain internal implementation details.
+
+Virtual-properties stage: **complete for the agreed first version**. Stable sources,
+canonical row values, shared title editing, per-view opt-in visibility, effective-schema
+consumers, read-only mutation guards, global Fields-menu preferences, and the versioned
+legacy migration are implemented without frontmatter duplication. Shared properties are
+a separate future feature.
 
 ### Database navigation
 
@@ -206,7 +307,7 @@ The planned configurable week start should be stored on `ViewConfig`, for exampl
 On 2026-08-27 after the Calendar and Board splits:
 
 - `npm run build`: passes.
-- `npm test`: all 8 test files and 189 tests pass.
+- `npm test`: all 9 test files and 196 tests pass.
 - targeted ESLint for Calendar, Board, and `EditableFields`: passes.
 - `EditableTitle` now uses relative imports, a popout-safe `window.requestAnimationFrame`,
   and a void-returning blur handler.
@@ -262,3 +363,24 @@ contracts, and preservation of known-working behavior over generalized abstracti
 - Extracted `EditableCardProperties` as the shared Board/Calendar property renderer.
 - Added `EditableDate` to monthly, weekly all-day, weekly timed, and no-date Calendar
   cards while preserving the uniform 5 px property gap.
+- Formalized the planned database, virtual, and shared property scopes, including the
+  shared `type` selector use case and its initial design questions.
+- Confirmed a root-level Markdown registry, manual per-database shared-property
+  attachment with no inheritance, and read-only virtual metadata except for title rename.
+- Named the vault-root registry `register_shared_propertiers.md`.
+- Defined shared-option deletion as an impact-aware replace/clear/preserve workflow.
+- Defined shared-property deletion as conversion to per-database local clones with note
+  values preserved.
+- Made local/shared storage-key collisions blocking, with no automatic conversion.
+- Audited the existing virtual-property foundations and documented the exact coverage of
+  title, parent folder, path, creation time, and modification time across the codebase.
+- Implemented the canonical virtual-property catalog, non-persisted effective-schema
+  resolver, stable row hydration, centralized capabilities, and title-only mutation path.
+- Added thirteen virtual-property tests, bringing the suite to 202 passing tests.
+- Exposed read-only virtual properties per view and unified filters, sorts, formulas,
+  charts, conditional formatting, and Calendar/Timeline mutation guards around the
+  effective schema.
+- Removed the obsolete Table column-type actions that created local creation/modification
+  `systemField` columns; those values are now added only from the virtual Fields catalog.
+- Added plugin-wide Fields-menu visibility toggles for each read-only virtual property,
+  with creation/modification timestamps hidden by default, plus dedicated folder/path icons.

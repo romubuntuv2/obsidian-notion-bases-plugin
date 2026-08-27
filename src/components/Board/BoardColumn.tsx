@@ -15,7 +15,6 @@ interface BoardColumnProps {
 	view: ViewConfig
 	schema: ColumnSchema[]
 	visibleColumns: ColumnSchema[]
-	databaseFolderPath: string
 	manager: DatabaseManager
 	editingLimit: string | null
 	expanded: boolean
@@ -33,7 +32,7 @@ interface BoardColumnProps {
 }
 
 export function BoardColumn({ column, cardDragOver, columnDragOver, view, schema,
-	visibleColumns, databaseFolderPath, manager, editingLimit, expanded,
+	visibleColumns, manager, editingLimit, expanded,
 	onSetEditingLimit, onSetExpanded, onSetCardDragOver, onSetColumnDragOver,
 	onSaveView, onMoveCard, onMoveColumn, onAddCard, onOpenFile, onCardDragStart,
 	onCardContextMenu }: BoardColumnProps) {
@@ -102,8 +101,7 @@ export function BoardColumn({ column, cardDragOver, columnDragOver, view, schema
 		<div className="nb-board-cards">
 			{visibleRows.map(row => {
 				const card = <BoardCard row={row} visibleColumns={visibleColumns}
-					databaseFolderPath={databaseFolderPath} manager={manager}
-					includeSubfolders={view.includeSubfolders ?? false} onOpen={onOpenFile}
+					manager={manager} onOpen={onOpenFile}
 					onDragStart={onCardDragStart} onContextMenu={onCardContextMenu}
 					cardStyle={view.conditionalFormats?.length ? getCardConditionalStyle(row, view.conditionalFormats, schema) : undefined} />
 				return visibleRows.length >= VIRTUALIZATION_THRESHOLD

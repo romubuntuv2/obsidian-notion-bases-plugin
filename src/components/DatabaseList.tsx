@@ -23,6 +23,8 @@ import { BottomSheet } from './BottomSheet'
 import { ConditionalFormatPanel } from './ConditionalFormatPanel'
 import { findHierarchyColumn, buildHierarchyTree, HierarchyRow } from '../hierarchy-utils'
 import { stringifyScalar } from '../value-utils'
+import { getFieldMenuColumns, getPropertyIcon, getViewPropertyColumns, getVisibleViewProperties, isPropertyVisibleInView, toggleViewProperty } from '../virtual-properties'
+import EditableTitle from './EditableFields/EditableTitle'
 
 interface DatabaseListProps {
 	dbFile: TFile | null
@@ -110,8 +112,7 @@ interface ListRowProps {
 	isExpanded: boolean
 	isHierarchical: boolean
 	visibleCols: ColumnSchema[]
-	dbFolderPath: string
-	includeSubfolders: boolean
+	manager: DatabaseManager
 	onOpen: (file: TFile) => void
 	onToggleExpand: (filePath: string) => void
 	isMobile: boolean
@@ -123,13 +124,9 @@ interface ListRowProps {
 
 const ListRow = React.memo(function ListRow({
 	row, depth, hasChildren, isExpanded, isHierarchical, visibleCols,
-	dbFolderPath, includeSubfolders, onOpen, onToggleExpand,
+	manager, onOpen, onToggleExpand,
 	isMobile, onLongPress, onContextMenu, longPressRef, cardStyle,
 }: ListRowProps) {
-	const fileFolder = row._file.parent?.path ?? ''
-	const relPath = includeSubfolders && fileFolder.length > dbFolderPath.length
-		? fileFolder.slice(dbFolderPath.length + 1) : ''
-
 	return (
 		<div
 			className="nb-list-row"
@@ -146,8 +143,7 @@ const ListRow = React.memo(function ListRow({
 				</button>
 			)}
 			<span className="nb-list-row-icon">📄</span>
-			<span className="nb-list-row-title">{row._title}</span>
-			{relPath ? <span className="nb-folder-path" style={{ marginLeft: 4 }}>{relPath}</span> : null}
+			<EditableTitle title={row._title} file={row._file} manager={manager} onOpen={onOpen} className="nb-list-row-title" />
 			{visibleCols.length > 0 && (
 				<div className="nb-list-row-props">
 					{visibleCols.map(col => {
@@ -169,7 +165,7 @@ const ListRow = React.memo(function ListRow({
 
 export function DatabaseList({ dbFile, manager, externalView, onViewChange }: DatabaseListProps) {
 	const app = useApp()
-	const { rows, config, loading, activeFilters, setActiveFilters } = useDatabaseRows({
+	const { rows, config, effectiveSchema, loading, activeFilters, setActiveFilters } = useDatabaseRows({
 		app, dbFile, manager, includeSubfolders: externalView.includeSubfolders, externalView,
 	})
 	const [activeView, setActiveView] = useState<ViewConfig>(externalView)
@@ -246,11 +242,10 @@ export function DatabaseList({ dbFile, manager, externalView, onViewChange }: Da
 	const toggleConjunction = (id: string) => { const next = activeFilters.map(f => f.id === id ? { ...f, conjunction: f.conjunction === 'and' ? 'or' as const : 'and' as const } : f); setActiveFilters(next); void saveActivePills(next) }
 
 	const toggleFieldVisibility = useCallback(async (fieldId: string) => {
-		const hidden = activeView.hiddenColumns.includes(fieldId)
-			? activeView.hiddenColumns.filter(id => id !== fieldId)
-			: [...activeView.hiddenColumns, fieldId]
-		await saveView({ ...activeView, hiddenColumns: hidden })
-	}, [activeView, saveView])
+		const column = effectiveSchema.find(candidate => candidate.id === fieldId)
+		if (!column) return
+		await saveView(toggleViewProperty(activeView, column))
+	}, [activeView, effectiveSchema, saveView])
 
 	const handleSortChange = useCallback(async (newSorts: SortConfig[]) => {
 		await saveView({ ...activeView, sorts: newSorts })
@@ -290,15 +285,13 @@ export function DatabaseList({ dbFile, manager, externalView, onViewChange }: Da
 
 	const { pageItems: pagedRows, currentPage, totalPages, setPage } = usePagination(displayRows, hierarchyCol ? 0 : manager.pageSize)
 
-	const visibleCols = useMemo(() =>
-		config.schema.filter(col => col.visible && !activeView.hiddenColumns.includes(col.id)),
-		[config.schema, activeView.hiddenColumns]
-	)
+	const visibleCols = useMemo(() => getVisibleViewProperties(effectiveSchema, activeView), [effectiveSchema, activeView])
+	const viewPropertyColumns = useMemo(() => getViewPropertyColumns(effectiveSchema), [effectiveSchema])
+	const fieldMenuColumns = getFieldMenuColumns(effectiveSchema)
 
 	// ── Render ───────────────────────────────────────────────────────────────
 
 	const isMobile = useIsMobile()
-	const dbFolderPath = dbFile?.parent?.path ?? ''
 	const openFile = useCallback((file: TFile) => { void app.workspace.getLeaf().openFile(file) }, [app])
 	const [contextMenuFile, setContextMenuFile] = useState<TFile | null>(null)
 	const longPressRef = useRef<number | null>(null)
@@ -331,10 +324,10 @@ export function DatabaseList({ dbFile, manager, externalView, onViewChange }: Da
 			onConjunctionToggle={toggleConjunction}
 		>
 			<BottomSheet open={fieldsMenuOpen} onClose={() => setFieldsMenuOpen(false)} title={t('fields')}>
-				{config.schema.map(col => (
+				{fieldMenuColumns.map(col => (
 					<label key={col.id} className="nb-field-row">
-						<input type="checkbox" className="nb-field-checkbox" checked={col.visible && !activeView.hiddenColumns.includes(col.id)} onChange={() => { void toggleFieldVisibility(col.id) }} />
-						<span className="nb-field-icon">{getColumnIconStatic(col.type)}</span>
+						<input type="checkbox" className="nb-field-checkbox" checked={isPropertyVisibleInView(col, activeView)} onChange={() => { void toggleFieldVisibility(col.id) }} />
+						<span className="nb-field-icon">{getPropertyIcon(col) ?? getColumnIconStatic(col.type)}</span>
 						<span className="nb-field-name">{col.name}</span>
 					</label>
 				))}
@@ -343,7 +336,7 @@ export function DatabaseList({ dbFile, manager, externalView, onViewChange }: Da
 				<button className="nb-menu-item" onClick={() => addFilter('_title', t('name_column'), '📄', 'title')}>
 					<span className="nb-menu-item-icon">📄</span><span>{t('name_column')}</span>
 				</button>
-				{config.schema.map(col => (
+				{viewPropertyColumns.map(col => (
 					<button key={col.id} className="nb-menu-item" onClick={() => addFilter(col.id, col.name, getColumnIconStatic(col.type), col.type)}>
 						<span className="nb-menu-item-icon">{getColumnIconStatic(col.type)}</span>
 						<span>{col.name}</span>
@@ -357,7 +350,7 @@ export function DatabaseList({ dbFile, manager, externalView, onViewChange }: Da
 				{activeView.sorts.map((sort, idx) => {
 					const name = sort.columnId === '_title'
 						? 'Nome'
-						: (config.schema.find(c => c.id === sort.columnId)?.name ?? sort.columnId)
+						: (effectiveSchema.find(c => c.id === sort.columnId)?.name ?? sort.columnId)
 					return (
 						<div key={sort.columnId} className="nb-sort-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', minHeight: '44px' }}>
 							<div className="nb-sort-row-priority" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -373,7 +366,7 @@ export function DatabaseList({ dbFile, manager, externalView, onViewChange }: Da
 					)
 				})}
 				{(() => {
-					const sortableSchema = config.schema.filter(c => c.type !== 'formula' && c.type !== 'lookup' && c.type !== 'relation' && c.type !== 'multiselect')
+					const sortableSchema = viewPropertyColumns.filter(c => c.type !== 'formula' && c.type !== 'lookup' && c.type !== 'relation' && c.type !== 'multiselect')
 					const usedIds = new Set(activeView.sorts.map(s => s.columnId))
 					const available = [
 						...(!usedIds.has('_title') ? [{ id: '_title', name: 'Nome' }] : []),
@@ -407,10 +400,10 @@ export function DatabaseList({ dbFile, manager, externalView, onViewChange }: Da
 					{fieldsMenuOpen && (
 						<div className="nb-fields-dropdown">
 							<div className="nb-fields-dropdown-label">{t('fields_label')}</div>
-							{config.schema.map(col => (
+							{fieldMenuColumns.map(col => (
 								<label key={col.id} className="nb-field-row">
-									<input type="checkbox" className="nb-field-checkbox" checked={col.visible && !activeView.hiddenColumns.includes(col.id)} onChange={() => { void toggleFieldVisibility(col.id) }} />
-									<span className="nb-field-icon">{getColumnIconStatic(col.type)}</span>
+									<input type="checkbox" className="nb-field-checkbox" checked={isPropertyVisibleInView(col, activeView)} onChange={() => { void toggleFieldVisibility(col.id) }} />
+									<span className="nb-field-icon">{getPropertyIcon(col) ?? getColumnIconStatic(col.type)}</span>
 									<span className="nb-field-name">{col.name}</span>
 								</label>
 							))}
@@ -441,7 +434,7 @@ export function DatabaseList({ dbFile, manager, externalView, onViewChange }: Da
 							<button className="nb-menu-item" onClick={() => addFilter('_title', t('name_column'), '📄', 'title')}>
 								<span className="nb-menu-item-icon">📄</span><span>{t('name_column')}</span>
 							</button>
-							{config.schema.map(col => (
+							{viewPropertyColumns.map(col => (
 								<button key={col.id} className="nb-menu-item" onClick={() => addFilter(col.id, col.name, getColumnIconStatic(col.type), col.type)}>
 									<span className="nb-menu-item-icon">{getColumnIconStatic(col.type)}</span>
 									<span>{col.name}</span>
@@ -456,7 +449,7 @@ export function DatabaseList({ dbFile, manager, externalView, onViewChange }: Da
 					{activeView.sorts.length > 0 && <span className="nb-hidden-badge">{activeView.sorts.length}</span>}
 				</button>
 				{sortPanelOpen && sortAnchorRect && (
-					<ListSortPanel sorts={activeView.sorts} schema={config.schema} onSortChange={s => { void handleSortChange(s) }} onClose={() => setSortPanelOpen(false)} anchorRect={sortAnchorRect} panelRef={sortPanelRef} />
+					<ListSortPanel sorts={activeView.sorts} schema={viewPropertyColumns} onSortChange={s => { void handleSortChange(s) }} onClose={() => setSortPanelOpen(false)} anchorRect={sortAnchorRect} panelRef={sortPanelRef} />
 				)}
 
 				{/* Conditional formatting */}
@@ -474,7 +467,7 @@ export function DatabaseList({ dbFile, manager, externalView, onViewChange }: Da
 					{cfPanelOpen && (
 						<ConditionalFormatPanel
 							rules={activeView.conditionalFormats ?? []}
-							schema={config.schema}
+							schema={effectiveSchema}
 							onChange={rules => { void saveView({ ...activeView, conditionalFormats: rules }) }}
 							onClose={() => setCfPanelOpen(false)}
 						/>
@@ -483,7 +476,7 @@ export function DatabaseList({ dbFile, manager, externalView, onViewChange }: Da
 			</div>
 			<FilterPillsRow
 				activeFilters={activeFilters}
-				schema={config.schema}
+				schema={effectiveSchema}
 				onUpdate={updateFilter}
 				onRemove={removeFilter}
 				onToggleConjunction={toggleConjunction}
@@ -510,15 +503,14 @@ export function DatabaseList({ dbFile, manager, externalView, onViewChange }: Da
 							isExpanded={isExp}
 							isHierarchical={hierarchicalRows !== null}
 							visibleCols={visibleCols}
-							dbFolderPath={dbFolderPath}
-							includeSubfolders={activeView.includeSubfolders ?? false}
+							manager={manager}
 							onOpen={openFile}
 							onToggleExpand={toggleHExpand}
 							isMobile={isMobile}
 							onLongPress={handleLongPress}
 							onContextMenu={handleContextMenu}
 							longPressRef={longPressRef}
-							cardStyle={activeView.conditionalFormats?.length ? getCardConditionalStyle(row, activeView.conditionalFormats, config.schema) : undefined}
+							cardStyle={activeView.conditionalFormats?.length ? getCardConditionalStyle(row, activeView.conditionalFormats, effectiveSchema) : undefined}
 						/>
 					)
 				})}

@@ -10,7 +10,6 @@ import { CardContextMenuHandler, CardDragHandler } from './calendar-types'
 
 interface DatabaseMonthlyCardProps {
 	row: NoteRow
-	dbFile: TFile
 	manager: DatabaseManager
 	activeView: ViewConfig
 	dateField: ColumnSchema
@@ -21,12 +20,8 @@ interface DatabaseMonthlyCardProps {
 	onContextMenu: CardContextMenuHandler
 }
 
-export function DatabaseMonthlyCard({ row, dbFile, manager, activeView, dateField, schema,
+export function DatabaseMonthlyCard({ row, manager, activeView, dateField, schema,
 	visibleColumns, onOpenFile, onCardDragStart, onContextMenu }: DatabaseMonthlyCardProps) {
-	const fileFolder = row._file.parent?.path ?? ''
-	const databaseFolder = dbFile.parent?.path ?? ''
-	const relativePath = activeView.includeSubfolders && fileFolder.length > databaseFolder.length
-		? fileFolder.slice(databaseFolder.length + 1) : ''
 	const cardStyle = activeView.conditionalFormats?.length
 		? getCardConditionalStyle(row, activeView.conditionalFormats, schema) : undefined
 
@@ -38,7 +33,6 @@ export function DatabaseMonthlyCard({ row, dbFile, manager, activeView, dateFiel
 			{getRowTime(row, dateField.id) && <span className="nb-cal-time-badge">{getRowTime(row, dateField.id)}</span>}
 			<EditableTitle title={row._title} file={row._file} manager={manager} onOpen={onOpenFile} className="nb-cal-card-title" />
 		</div>
-		{relativePath && <div className="nb-folder-path">{relativePath}</div>}
 		<EditableCardProperties row={row} columns={visibleColumns} manager={manager} />
 	</div>
 }
