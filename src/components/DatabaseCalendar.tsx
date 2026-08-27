@@ -128,6 +128,10 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 		() => config.schema.filter(col => col.visible && !activeView.hiddenColumns.includes(col.id)),
 		[config.schema, activeView.hiddenColumns]
 	)
+	const visibleDateCols = useMemo(
+		() => visibleCols.filter(col => col.type === 'date' && !col.systemField),
+		[visibleCols]
+	)
 
 	const calendarCells = useMemo(() => buildCalendarGrid(currentYear, currentMonth), [currentYear, currentMonth])
 
@@ -475,7 +479,8 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 			) : (
 				<div className='nb-cal-view'>
 					{viewMode === 'week' ?
-						<DatabaseWeekView dateField={dateField} weekDays={weekDays} rowsByDate={rowsByDate}
+						<DatabaseWeekView dateField={dateField} visibleDateColumns={visibleDateCols}
+							manager={manager} weekDays={weekDays} rowsByDate={rowsByDate}
 							today={today} nowMinutes={nowMinutes} bodyRef={weekBodyRef}
 							onDayClick={handleDayClick} onCardDragStart={handleCardDragStart}
 							onDayDragOver={handleDayDragOver} onDayDragLeave={handleDayDragLeave}
@@ -490,7 +495,7 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 						}} />
 					}
 					{noDateRows.length > 0 && <DatabaseNoDateRows rows={noDateRows} dbFile={dbFile}
-						manager={manager} activeView={activeView} onOpenFile={openFile}
+						manager={manager} activeView={activeView} visibleDateColumns={visibleDateCols} onOpenFile={openFile}
 						onCardDragStart={handleCardDragStart} onCardContextMenu={handleCardContextMenu} />}
 				</div>
 			)}

@@ -4,8 +4,7 @@ import { ColumnSchema, NoteRow, ViewConfig } from '../../types'
 import { DatabaseManager } from '../../database-manager'
 import { getCardConditionalStyle } from '../filter-utils'
 import EditableTitle from '../EditableFields/EditableTitle'
-import EditableSelector from '../EditableFields/EditableSelector'
-import { stringifyScalar } from '../../value-utils'
+import EditableCardProperties from '../EditableFields/EditableCardProperties'
 import { getRowTime } from './calendar-utils'
 import { CardContextMenuHandler, CardDragHandler } from './calendar-types'
 
@@ -40,21 +39,6 @@ export function DatabaseMonthlyCard({ row, dbFile, manager, activeView, dateFiel
 			<EditableTitle title={row._title} file={row._file} manager={manager} onOpen={onOpenFile} className="nb-cal-card-title" />
 		</div>
 		{relativePath && <div className="nb-folder-path">{relativePath}</div>}
-		{visibleColumns.length > 0 && <div className="nb-board-card-props">
-			{visibleColumns.map(column => {
-				const value = row[column.id]
-				const isSelector = column.type === 'select' || column.type === 'status' || column.type === 'multiselect'
-				if (isSelector) {
-					return <EditableSelector key={column.id} column={column} value={value}
-						file={row._file} manager={manager} inlineFields={row._inlineFields} />
-				}
-				if (value === null || value === undefined || stringifyScalar(value).trim() === '') return null
-				const display = Array.isArray(value) ? (value as string[]).join(', ') : stringifyScalar(value)
-				return <span key={column.id} className="nb-board-card-prop">
-					<span className="nb-board-card-prop-name">{column.name}:</span>
-					<span className="nb-board-card-prop-value">{display}</span>
-				</span>
-			})}
-		</div>}
+		<EditableCardProperties row={row} columns={visibleColumns} manager={manager} />
 	</div>
 }

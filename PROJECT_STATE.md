@@ -34,6 +34,7 @@ out of scope and must not be reintroduced. New features target desktop Obsidian 
 - [x] Subfolder paths on Calendar cards.
 - [x] Inline title editing through the shared `EditableTitle` component.
 - [x] Inline editing of `select`, `status`, and `multiselect` properties on monthly cards.
+- [x] Inline date editing on monthly, weekly all-day, weekly timed, and no-date cards.
 - [x] Shared native Obsidian context menu on month, week, and no-date cards.
 - [x] Calendar implementation split into focused files under `src/components/Calendar/`.
 
@@ -56,7 +57,7 @@ Stable invariants that must be preserved:
 - [x] Column limits, show more/less, filtering, conditional formatting, and virtualization.
 - [x] All Board mobile/touch interaction paths removed.
 - [x] `EditableSelector` — implemented for Calendar monthly cards and Board cards.
-- [x] `EditableDate` — implemented for Board card properties.
+- [x] `EditableDate` — implemented for Board and Calendar card properties.
 
 ### Editable fields
 
@@ -64,10 +65,15 @@ Editable field components live in `src/components/EditableFields/`:
 
 ```text
 EditableFields/
+├── EditableCardProperties.tsx
 ├── EditableTitle.tsx
 ├── EditableSelector.tsx
 └── EditableDate.tsx
 ```
+
+`EditableCardProperties` is the shared card-property renderer used by Board and Calendar.
+It routes editable date and selector columns to their dedicated components and preserves
+the existing read-only rendering for other populated property types.
 
 `EditableSelector` displays configured options, supports clearing values, uses
 single-choice behavior for `select`/`status`, and toggle behavior for `multiselect`.
@@ -78,10 +84,10 @@ columns.
 Creating, renaming, recoloring, or deleting schema options is intentionally outside this
 first Calendar implementation.
 
-`EditableDate` is currently used on Board cards. It hides the property name, displays a
+`EditableDate` is used on Board cards and every Calendar card variant. It hides the property name, displays a
 compact French label such as `Lun 12 Janv.`, and opens the native date picker from a
 small content-sized control. Its dimensions and typography match selector badges; the
-empty state matches the compact selector placeholder. Board properties below the title
+empty state matches the compact selector placeholder. Card properties below the title
 share a wrapping inline row with a uniform 5 px gap: date and selector stay side by side when
 space permits and move naturally onto the next line otherwise. The editor preserves an
 existing time suffix, supports clearing the date, persists through
@@ -253,3 +259,6 @@ contracts, and preservation of known-working behavior over generalized abstracti
 - Anchored the native date input to the click position before opening the picker.
 - Kept the input in the card's own document so multi-window and multi-monitor Obsidian
   setups cannot open the picker from another window's document.
+- Extracted `EditableCardProperties` as the shared Board/Calendar property renderer.
+- Added `EditableDate` to monthly, weekly all-day, weekly timed, and no-date Calendar
+  cards while preserving the uniform 5 px property gap.

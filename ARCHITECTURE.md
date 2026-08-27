@@ -65,12 +65,12 @@ File responsibilities:
 
 | File | Responsibility |
 | --- | --- |
-| `DatabaseWeekView.tsx` | All-day cards, headers, time slots, timed cards, and current-time line. |
+| `DatabaseWeekView.tsx` | All-day cards, timed cards, visible-date editing, time slots, and current-time line. |
 | `DatabaseMonthView.tsx` | Weekday headings and division of the month grid into seven-day rows. |
 | `DatabaseMonthWeek.tsx` | One seven-cell month row. |
 | `DatabaseMonthCell.tsx` | Day state, desktop note creation, card rendering, and drop target. |
 | `DatabaseMonthlyCard.tsx` | Monthly card title, time, folder path, properties, and conditional style. |
-| `DatabaseNoDateRows.tsx` | Draggable cards whose selected date field is empty. |
+| `DatabaseNoDateRows.tsx` | Draggable cards whose selected date field is empty, with inline date assignment. |
 | `calendar-utils.ts` | Pure date parsing, grid construction, keys, time/range formatting, and labels. |
 | `calendar-types.ts` | Shared handler and row-map types used across Calendar modules. |
 
@@ -271,6 +271,7 @@ Reusable inline editors live in `src/components/EditableFields/`.
 
 | Component | Responsibility |
 | --- | --- |
+| `EditableCardProperties.tsx` | Shared Board/Calendar routing for editable dates, selectors, and read-only scalar properties. |
 | `EditableTitle.tsx` | Single-click open, double-click rename, and rename persistence through `DatabaseManager`. |
 | `EditableSelector.tsx` | Fixed-position option menu and persistence for `select`, `status`, and `multiselect` fields. |
 | `EditableDate.tsx` | Compact French date display, native date-picker activation, and date persistence. |
@@ -298,18 +299,22 @@ compact while still being discoverable.
 Schema-option management is not part of this component's first iteration: it consumes
 the existing options but does not create, rename, recolor, or delete them.
 
-`EditableDate` is initially integrated into Board cards for non-system date columns. It
+`EditableDate` is integrated into Board cards and every Calendar card variant for
+visible non-system date columns. It
 renders no property label and formats valid `YYYY-MM-DD` values with deterministic
 French abbreviations in title case (`Lun 12 Janv.`). The visible button is content-sized,
 left-aligned, and uses dimensions and typography aligned with selector badges. Its empty
 state uses the same quarter-width 48–88 px placeholder contract as
 `EditableSelector`.
 
-Board fields rendered below `EditableTitle` live inside
+Board and Calendar fields rendered below their card title live inside
 `nb-board-card-props--inline`, a left-aligned flex row with wrapping and a uniform 5 px
 gap. Editors remain content-sized and share a line while they fit; normal flex wrapping
-moves the next field to a new line when the card width is insufficient. This layout is
-Board-specific and does not alter Calendar property stacking.
+moves the next field to a new line when the card width is insufficient.
+
+`EditableCardProperties` owns the shared type routing. Board and monthly Calendar cards
+pass all visible property columns; weekly and no-date Calendar cards pass visible date
+columns so their compact content model is preserved while dates become editable.
 
 `EditableDate` exposes its visible button directly as the flex item; it must not add a
 layout wrapper around that button. Its hidden native input remains in the same document
@@ -381,3 +386,6 @@ the production bundle and Vitest.
   `showPicker()`, anchoring the calendar beside the pointer without affecting gaps.
 - Kept the native input in the card's owner document so Obsidian multi-window setups do
   not redirect the picker to a window on another monitor.
+- Extracted `EditableCardProperties` and reused it in Board and Calendar card renderers.
+- Integrated visible editable dates into monthly, weekly all-day, weekly timed, and
+  no-date Calendar cards with the same wrapping 5 px gap contract as Board cards.

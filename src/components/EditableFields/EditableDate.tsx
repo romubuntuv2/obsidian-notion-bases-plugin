@@ -80,6 +80,7 @@ export default function EditableDate({ fieldId, value, file, manager, inlineFiel
 			onClick={openPicker}>{display ?? '—'}</button>
 		<input ref={inputRef} type="date" className="nb-editable-date-input" value={datePart(localValue)}
 			disabled={saving} draggable={false} tabIndex={-1} aria-hidden="true"
+			onClick={event => event.stopPropagation()}
 			onChange={event => { void save(event.target.value) }} />
 	</>
 }
