@@ -86,6 +86,8 @@ share a wrapping inline row with a uniform 5 px gap: date and selector stay side
 space permits and move naturally onto the next line otherwise. The editor preserves an
 existing time suffix, supports clearing the date, persists through
 `DatabaseManager.updateNoteField`, and leaves system dates read-only.
+Before opening, the hidden native input is positioned at the pointer coordinates so the
+picker appears beside the click; keyboard activation anchors it below the visible date.
 
 Confirmed visual behavior on Calendar monthly cards:
 
@@ -246,6 +248,8 @@ contracts, and preservation of known-working behavior over generalized abstracti
   their visible width and keep the same gap before the next field.
 - Prevented selector buttons from growing inside the properties row, keeping the visual
   gap between the date and badge identical to the configured flex gap.
-- Portaled the hidden native date input outside the Board properties flex row and forced
-  populated selectors to `max-content`, removing all invisible horizontal width between
-  the two visible controls.
+- Removed all invisible horizontal width between the visible controls by forcing
+  populated selectors to `max-content` and the native date input out of the flex flow.
+- Anchored the native date input to the click position before opening the picker.
+- Kept the input in the card's own document so multi-window and multi-monitor Obsidian
+  setups cannot open the picker from another window's document.

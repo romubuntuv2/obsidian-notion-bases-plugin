@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { Notice, TFile } from 'obsidian'
 import { DatabaseManager } from '../../database-manager'
 import { InlineFieldMeta } from '../../types'
@@ -64,15 +63,14 @@ export default function EditableDate({ fieldId, value, file, manager, inlineFiel
 		if (saving) return
 		const input = inputRef.current
 		if (!input) return
+		const buttonRect = event.currentTarget.getBoundingClientRect()
+		const pointerActivation = event.clientX !== 0 || event.clientY !== 0
+		const anchorX = pointerActivation ? event.clientX : buttonRect.left
+		const anchorY = pointerActivation ? event.clientY : buttonRect.bottom
+		input.style.left = `${anchorX}px`
+		input.style.top = `${anchorY}px`
 		try { input.showPicker() } catch { input.focus(); input.click() }
 	}
-
-	const nativeInput = createPortal(
-		<input ref={inputRef} type="date" className="nb-editable-date-input" value={datePart(localValue)}
-			disabled={saving} draggable={false} tabIndex={-1} aria-hidden="true"
-			onChange={event => { void save(event.target.value) }} />,
-		activeDocument.body,
-	)
 
 	return <>
 		<button type="button" draggable={false}
@@ -80,6 +78,8 @@ export default function EditableDate({ fieldId, value, file, manager, inlineFiel
 			disabled={saving} aria-label="Modifier la date"
 			onMouseDown={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()}
 			onClick={openPicker}>{display ?? '—'}</button>
-		{nativeInput}
+		<input ref={inputRef} type="date" className="nb-editable-date-input" value={datePart(localValue)}
+			disabled={saving} draggable={false} tabIndex={-1} aria-hidden="true"
+			onChange={event => { void save(event.target.value) }} />
 	</>
 }

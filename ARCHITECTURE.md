@@ -312,16 +312,18 @@ moves the next field to a new line when the card width is insufficient. This lay
 Board-specific and does not alter Calendar property stacking.
 
 `EditableDate` exposes its visible button directly as the flex item; it must not add a
-layout wrapper around that button. The hidden native input is portaled to
-`activeDocument.body`, completely outside the properties flex row. Empty and populated
-dates therefore reserve only their visible width, making
+layout wrapper around that button. Its hidden native input remains in the same document
+as the card but is forcibly fixed and constrained to one pixel, removing it completely
+from the properties flex flow. Empty and populated dates therefore reserve only their visible width, making
 the container's 5 px gap the sole spacing before the next editor. Selector
 buttons use `flex: 0 0 auto` and left justification so their transparent button surface
 cannot consume the remaining row width or center the visible badge away from that gap.
 
 Picker activation is explicit: the visible button calls `HTMLInputElement.showPicker()`
-during the user gesture, while the native `input[type="date"]` remains a one-pixel,
-non-interactive anchor. It must never overlay or stretch across the card. The component
+during the user gesture. Immediately beforehand, the fixed one-pixel native input is
+moved to the pointer coordinates, causing Chromium's picker to open beside the click;
+keyboard activation uses the visible button's lower-left corner. The native input remains
+non-interactive and outside the card layout. It must never overlay or stretch across the card. The component
 updates optimistically, preserves an existing `T...` time suffix, rolls back on failure,
 and writes through `DatabaseManager.updateNoteField`.
 
@@ -373,5 +375,9 @@ the production bundle and Vitest.
   state-dependent visual gap.
 - Prevented selector buttons from stretching inside Board property rows, making the
   configured horizontal spacing match the visible badge spacing.
-- Portaled the native date input outside the properties row and constrained populated
-  selector buttons to `max-content`, eliminating invisible spacing from both controls.
+- Constrained the native date input outside the properties flow and populated selector
+  buttons to `max-content`, eliminating invisible spacing from both controls.
+- Positioned the native date input at the click coordinates immediately before
+  `showPicker()`, anchoring the calendar beside the pointer without affecting gaps.
+- Kept the native input in the card's owner document so Obsidian multi-window setups do
+  not redirect the picker to a window on another monitor.
