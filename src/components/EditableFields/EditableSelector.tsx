@@ -4,6 +4,9 @@ import { Notice, TFile } from 'obsidian'
 import { DatabaseManager } from '../../database-manager'
 import { ColumnSchema, InlineFieldMeta, SelectOption } from '../../types'
 import { t } from '../../i18n'
+import { CreateSelectorOptionHandler, RenameSelectorOptionHandler } from '../../hooks/useSelectorOptionRename'
+import { RenamableSelectorOption } from './RenamableSelectorOption'
+import { SelectorOptionCreateInput } from './SelectorOptionCreateInput'
 
 interface EditableSelectorProps {
 	column: ColumnSchema
@@ -11,6 +14,8 @@ interface EditableSelectorProps {
 	file: TFile
 	manager: DatabaseManager
 	inlineFields?: Record<string, InlineFieldMeta>
+	onRenameOption: RenameSelectorOptionHandler
+	onCreateOption: CreateSelectorOptionHandler
 }
 
 const defaultStatusOptions = (): SelectOption[] => [
@@ -28,7 +33,9 @@ function textColor(background?: string): string | undefined {
 	return (red * 299 + green * 587 + blue * 114) / 1000 > 150 ? '#111' : '#fff'
 }
 
-export default function EditableSelector({ column, value, file, manager, inlineFields }: EditableSelectorProps) {
+export default function EditableSelector({
+	column, value, file, manager, inlineFields, onRenameOption, onCreateOption,
+}: EditableSelectorProps) {
 	const [open, setOpen] = useState(false)
 	const [localValue, setLocalValue] = useState<unknown>(value)
 	const [saving, setSaving] = useState(false)
@@ -83,6 +90,15 @@ export default function EditableSelector({ column, value, file, manager, inlineF
 		void save(next, false)
 	}
 
+	const createOption = async (name: string) => {
+		const option = await onCreateOption(column, name, options)
+		if (isMulti) {
+			await save(selected.includes(option.value) ? selected : [...selected, option.value], false)
+		} else {
+			await save(option.value, true)
+		}
+	}
+
 	const renderBadge = (optionValue: string) => {
 		const option = options.find(item => item.value === optionValue)
 		return <span key={optionValue} className="nb-select-badge"
@@ -93,14 +109,20 @@ export default function EditableSelector({ column, value, file, manager, inlineF
 		<div ref={dropdownRef} className="nb-select-dropdown nb-editable-selector-dropdown"
 			style={{ position: 'fixed', top: position.top, left: position.left, minWidth: position.width, zIndex: 9999 }}
 			onClick={event => event.stopPropagation()}>
+			<SelectorOptionCreateInput existingValues={options.map(option => option.value)} disabled={saving}
+				onCreate={createOption} onCancel={() => setOpen(false)} />
 			<button className="nb-select-option nb-select-clear" disabled={saving}
 				onClick={() => { void save(isMulti ? [] : null, !isMulti) }}>{t('select_clear')}</button>
-			{options.map(option => <button key={option.value}
+			{options.map(option => <RenamableSelectorOption key={option.value}
 				className={`nb-select-option${selected.includes(option.value) ? ' nb-select-option--active' : ''}`}
-				disabled={saving} onClick={() => selectOption(option.value)}>
+				value={option.value} disabled={saving} onSelect={() => selectOption(option.value)}
+				onRename={async newValue => {
+					await onRenameOption(column, option.value, newValue, options)
+					setOpen(false)
+				}}>
 				{renderBadge(option.value)}
 				{selected.includes(option.value) && <span aria-hidden="true"> ✓</span>}
-			</button>)}
+			</RenamableSelectorOption>)}
 			{options.length === 0 && <div className="nb-select-option nb-editable-selector-empty">—</div>}
 		</div>, activeDocument.body
 	) : null

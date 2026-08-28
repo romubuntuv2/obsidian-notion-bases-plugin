@@ -15,7 +15,7 @@ import { DatabaseCalendar } from './DatabaseCalendar'
 import { DatabaseTimeline } from './DatabaseTimeline'
 import { DatabaseCharts } from './DatabaseCharts'
 import { t } from '../i18n'
-import { migrateLegacyVirtualProperties, resolveEffectiveSchema } from '../virtual-properties'
+import { migrateLegacyVirtualProperties } from '../virtual-properties'
 
 interface DatabaseRootProps {
 	dbFile: TFile | null
@@ -499,7 +499,7 @@ export function DatabaseRoot({
 							const filters = restoreFilterPills(pills, config.schema)
 							if (filters.length === 0) return undefined
 							const notes = manager.getNotesInDatabase(dbFile, activeView.includeSubfolders)
-							const effectiveSchema = resolveEffectiveSchema(config.schema).schema
+							const effectiveSchema = manager.resolveConfigSchema(config)
 							const rawRows = notes.map(f => manager.getNoteDataSync(f, effectiveSchema))
 							const resolved = manager.resolveRollupsForRows(
 								manager.resolveLookupsForRows(

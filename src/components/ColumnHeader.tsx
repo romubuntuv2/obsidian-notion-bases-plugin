@@ -53,6 +53,7 @@ const TYPE_LABELS = (): Record<ColumnType, string> => ({
 interface ColumnHeaderProps {
 	col: ColumnSchema
 	schema: ColumnSchema[]
+	effectiveSchema?: ColumnSchema[]
 	onUpdateSchema: (schema: ColumnSchema[]) => Promise<void>
 	onRenameColumn: (oldId: string, newName: string) => Promise<void>
 	onChangeType: (newType: ColumnType) => boolean | Promise<boolean>
@@ -60,7 +61,7 @@ interface ColumnHeaderProps {
 	dbFile: TFile | null
 }
 
-export function ColumnHeader({ col, schema, onUpdateSchema, onRenameColumn, onChangeType, manager, dbFile }: ColumnHeaderProps) {
+export function ColumnHeader({ col, schema, effectiveSchema = schema, onUpdateSchema, onRenameColumn, onChangeType, manager, dbFile }: ColumnHeaderProps) {
 	const app = useApp()
 	const [menuOpen, setMenuOpen] = useState(false)
 	const [renaming, setRenaming] = useState(false)
@@ -237,7 +238,7 @@ export function ColumnHeader({ col, schema, onUpdateSchema, onRenameColumn, onCh
 		if (!lookupDbPath) { setRefDbSchema([]); return }
 		const refDbFile = app.vault.getFileByPath(lookupDbPath)
 		if (!refDbFile) { setRefDbSchema([]); return }
-		setRefDbSchema(manager.readConfig(refDbFile).schema)
+		setRefDbSchema(manager.resolveConfigSchema(manager.readConfig(refDbFile)))
 	}, [lookupDbPath, app, manager])
 
 	// Sync lookup state with col when not editing
@@ -270,7 +271,7 @@ export function ColumnHeader({ col, schema, onUpdateSchema, onRenameColumn, onCh
 		const refDbFile = app.vault.getFileByPath(relCol.refDatabasePath)
 		if (!refDbFile) { setRollupTargetSchema([]); return }
 		const refConfig = manager.readConfig(refDbFile)
-		setRollupTargetSchema(refConfig.schema)
+		setRollupTargetSchema(manager.resolveConfigSchema(refConfig))
 	}, [editingRollup, rollupRelColId, schema, app, manager])
 
 	// Sync rollup state with col when not editing
@@ -715,7 +716,7 @@ export function ColumnHeader({ col, schema, onUpdateSchema, onRenameColumn, onCh
 	}
 
 	const [refOpen, setRefOpen] = useState(false)
-	const otherCols = schema.filter(c => c.id !== col.id && c.type !== 'formula')
+	const otherCols = effectiveSchema.filter(c => c.id !== col.id && c.type !== 'formula')
 
 	const FORMULA_REF = [
 		{ group: t('formula_group_logic'), items: [
@@ -1094,7 +1095,7 @@ export function ColumnHeader({ col, schema, onUpdateSchema, onRenameColumn, onCh
 						<select className="nb-lookup-select" value={lookupMatchColId} onChange={e => setLookupMatchColId(e.target.value)}>
 							<option value="">{t('lookup_select_col')}</option>
 							<option value="_title">{'📄 ' + t('lookup_join_col_title')}</option>
-							{schema.filter(c => c.id !== col.id && c.type !== 'formula' && c.type !== 'lookup').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+							{effectiveSchema.filter(c => c.id !== col.id && c.type !== 'formula' && c.type !== 'lookup').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
 						</select>
 						<p className="nb-lookup-hint">{t('lookup_hint')}</p>
 					</div>

@@ -199,7 +199,7 @@ export function DatabaseTimeline({ dbFile, manager, externalView, onViewChange }
 	const { status: saveStatus, trackSave } = useSaveTracker()
 	const today = useMemo(() => new Date(), [])
 
-	const { rows, config, effectiveSchema, loading, activeFilters, setActiveFilters } = useDatabaseRows({
+	const { rows, effectiveSchema, loading, activeFilters, setActiveFilters } = useDatabaseRows({
 		app, dbFile, manager, includeSubfolders: externalView.includeSubfolders, externalView,
 	})
 	const [activeView, setActiveView] = useState<ViewConfig>(externalView)
@@ -306,10 +306,10 @@ export function DatabaseTimeline({ dbFile, manager, externalView, onViewChange }
 	const filteredRows  = useMemo(() => applyFilters(rows, debouncedFilters), [rows, debouncedFilters])
 	const displayRows   = useMemo(() => applySorts(filteredRows, activeView.sorts), [filteredRows, activeView.sorts])
 
-	const mutableDateColumns = useMemo(() => config.schema.filter(c => c.type === 'date' && getPropertyCapabilities(c).editable), [config.schema])
+	const mutableDateColumns = useMemo(() => effectiveSchema.filter(c => c.type === 'date' && getPropertyCapabilities(c).editable), [effectiveSchema])
 	const startField = useMemo(() => mutableDateColumns.find(c => c.id === activeView.timelineStartField) ?? null, [mutableDateColumns, activeView.timelineStartField])
 	const endField   = useMemo(() => mutableDateColumns.find(c => c.id === activeView.timelineEndField)   ?? null, [mutableDateColumns, activeView.timelineEndField])
-	const groupField = useMemo(() => config.schema.find(c => c.id === activeView.timelineGroupByField) ?? null, [config.schema, activeView.timelineGroupByField])
+	const groupField = useMemo(() => effectiveSchema.find(c => c.id === activeView.timelineGroupByField) ?? null, [effectiveSchema, activeView.timelineGroupByField])
 
 	const visibleCols = useMemo(
 		() => getVisibleViewProperties(effectiveSchema, activeView).filter(col =>
@@ -497,7 +497,7 @@ export function DatabaseTimeline({ dbFile, manager, externalView, onViewChange }
 					onClick={() => { void saveView({ ...activeView, timelineGroupByField: undefined }); setGroupMenuOpen(false) }}>
 					<span className="nb-menu-item-icon">—</span><span>{t('none_value')}</span>
 				</button>
-				{config.schema.filter(c => c.type === 'select' || c.type === 'status').map(col => (
+				{effectiveSchema.filter(c => c.type === 'select' || c.type === 'status').map(col => (
 					<button key={col.id} className={`nb-menu-item${activeView.timelineGroupByField === col.id ? ' nb-menu-item--active' : ''}`}
 						onClick={() => { void saveView({ ...activeView, timelineGroupByField: col.id }); setGroupMenuOpen(false) }}>
 						<span className="nb-menu-item-icon">{getColumnIconStatic(col.type)}</span><span>{col.name}</span>
@@ -559,7 +559,7 @@ export function DatabaseTimeline({ dbFile, manager, externalView, onViewChange }
 								onClick={() => { void saveView({ ...activeView, timelineGroupByField: undefined }); setGroupMenuOpen(false) }}>
 								<span className="nb-menu-item-icon">—</span><span>{t('none_value')}</span>
 							</button>
-							{config.schema.filter(c => c.type === 'select' || c.type === 'status').map(col => (
+							{effectiveSchema.filter(c => c.type === 'select' || c.type === 'status').map(col => (
 								<button key={col.id} className={`nb-menu-item${activeView.timelineGroupByField === col.id ? ' nb-menu-item--active' : ''}`}
 									onClick={() => { void saveView({ ...activeView, timelineGroupByField: col.id }); setGroupMenuOpen(false) }}>
 									<span className="nb-menu-item-icon">{getColumnIconStatic(col.type)}</span><span>{col.name}</span>

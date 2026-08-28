@@ -33,12 +33,13 @@ import { runtimePrefs } from '../runtime-prefs'
 import { DatabaseManager } from '../database-manager'
 import {
 	getFieldMenuColumns, getPropertyCapabilities, getPropertyIcon, getSelectedVirtualProperties, getViewPropertyColumns,
-	getVirtualPropertyById, isPropertyVisibleInView, toggleVirtualProperty, updateVirtualProperty,
+	getVirtualPropertyById, isPropertyVisibleInView, toggleViewProperty, toggleVirtualProperty, updateVirtualProperty,
 } from '../virtual-properties'
 import { ColumnSchema, ColumnType, ConditionalFormatRule, DatabaseConfig, FilterOperator, NoteRow, SortConfig, ViewConfig, AggregationType, DEFAULT_DATABASE_CONFIG, DEFAULT_VIEW } from '../types'
 import { useDatabaseRows } from '../hooks/useDatabaseRows'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { ColumnHeader } from './ColumnHeader'
+import { SharedColumnHeader } from './SharedColumnHeader'
 import { CellRenderer, CellContext } from './cells/CellRenderer'
 import { FolderPickerModal } from '../folder-picker-modal'
 import { t } from '../i18n'
@@ -53,6 +54,12 @@ import { useSaveTracker } from '../hooks/useSaveTracker'
 import { usePagination } from '../hooks/usePagination'
 import { findHierarchyColumn, buildHierarchyTree, HierarchyRow } from '../hierarchy-utils'
 import { stringifyScalar } from '../value-utils'
+import {
+	attachSharedProperty, detachSharedProperty, getSharedPropertyAttachmentError,
+} from '../shared-properties'
+import { SharedPropertyEditorModal } from '../shared-property-editor-modal'
+import { SharedOptionDeleteModal, SharedPropertyDeleteModal } from '../shared-property-deletion-modals'
+import { useSelectorOptionRename } from '../hooks/useSelectorOptionRename'
 
 // ── Virtual row rendering (separate component to isolate hooks) ──────────
 function useVirtualScroll(scrollRef: React.RefObject<HTMLElement | null>, rowHeight: number, disabled = false) {
@@ -782,7 +789,9 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 	const debouncedGlobalFilter = useDebouncedValue(globalFilter, 200)
 	const [editingCell, setEditingCell] = useState<{ rowIndex: number; columnId: string } | null>(null)
 	const [fieldsMenuOpen, setFieldsMenuOpen] = useState(false)
+	const [addColumnMenuOpen, setAddColumnMenuOpen] = useState(false)
 	const fieldsMenuRef = useRef<HTMLDivElement>(null)
+	const addColumnMenuRef = useRef<HTMLDivElement>(null)
 	const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
 	const [actionsMenuOpen, setActionsMenuOpen] = useState(false)
 	const [contextMenuFile, setContextMenuFile] = useState<TFile | null>(null)
@@ -830,6 +839,10 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 		() => getSelectedVirtualProperties(effectiveSchema, activeView.virtualColumnIds),
 		[effectiveSchema, activeView.virtualColumnIds],
 	)
+	const attachedSharedColumns = useMemo(
+		() => effectiveSchema.filter(column => column.propertyScope === 'shared'),
+		[effectiveSchema],
+	)
 
 	// Sync sorting state when activeView changes (e.g. embed switching)
 	useEffect(() => {
@@ -838,14 +851,14 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 
 	// Ordered display schema includes selected virtual properties without persisting them locally.
 	const orderedSchema = useMemo(() => {
-		const candidates = [...config.schema, ...selectedVirtualColumns]
+		const candidates = [...config.schema, ...attachedSharedColumns, ...selectedVirtualColumns]
 		const order = activeView.columnOrder
 		if (!order || order.length === 0) return candidates
 		const map = new Map(candidates.map(c => [c.id, c]))
 		const sorted = order.flatMap(id => map.has(id) ? [map.get(id)!] : [])
 		const rest = candidates.filter(c => !order.includes(c.id))
 		return [...sorted, ...rest]
-	}, [activeView.columnOrder, config.schema, selectedVirtualColumns])
+	}, [activeView.columnOrder, config.schema, attachedSharedColumns, selectedVirtualColumns])
 
 	// Salva view: embed atualiza estado local + persiste via callback; database escreve no frontmatter
 	const saveView = useCallback(async (updatedView: ViewConfig) => {
@@ -905,6 +918,27 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 		setConfig(newConfig)
 		await manager.writeConfig(dbFile, newConfig)
 	}, [dbFile, config, manager])
+
+	// Selector cells receive the effective schema. Route option edits back to the
+	// owning source instead of ever copying shared/virtual definitions locally.
+	const updateSelectorSchema = useCallback(async (nextEffectiveSchema: ColumnSchema[]) => {
+		const registry = manager.sharedProperties.read()
+		for (const nextColumn of nextEffectiveSchema.filter(column => column.propertyScope === 'shared')) {
+			const currentColumn = effectiveSchema.find(column => column.id === nextColumn.id && column.propertyScope === 'shared')
+			if (!currentColumn || JSON.stringify(currentColumn.options ?? []) === JSON.stringify(nextColumn.options ?? [])) continue
+			const definition = registry.properties.find(property => property.id === nextColumn.sharedPropertyId)
+			if (!definition) continue
+			await manager.sharedProperties.update({ ...definition, options: nextColumn.options?.map(option => ({ ...option })) })
+		}
+
+		const nextLocalSchema = config.schema.map(column => {
+			const candidate = nextEffectiveSchema.find(next => next.id === column.id && next.propertyScope === 'database')
+			return candidate && JSON.stringify(candidate.options ?? []) !== JSON.stringify(column.options ?? [])
+				? { ...column, options: candidate.options?.map(option => ({ ...option })) }
+				: column
+		})
+		if (JSON.stringify(nextLocalSchema) !== JSON.stringify(config.schema)) await updateSchema(nextLocalSchema)
+	}, [config.schema, effectiveSchema, manager, updateSchema])
 
 	// ── Validar e trocar tipo de coluna ─────────────────────────────────────
 
@@ -985,6 +1019,44 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 		setConfig(newConfig)
 	}, [dbFile, config, manager])
 
+	const renameSharedColumn = useCallback(async (column: ColumnSchema, name: string) => {
+		if (!column.sharedPropertyId) return
+		const definition = manager.sharedProperties.read().properties.find(property => property.id === column.sharedPropertyId)
+		if (!definition) return
+		await manager.sharedProperties.update({ ...definition, name })
+	}, [manager])
+
+	const detachSharedColumn = useCallback(async (column: ColumnSchema) => {
+		if (!dbFile || !column.sharedPropertyId) return
+		const nextConfig = detachSharedProperty(config, column.sharedPropertyId)
+		setConfig(nextConfig)
+		await manager.writeConfig(dbFile, nextConfig)
+	}, [config, dbFile, manager])
+
+	const requestDeleteSharedOption = useCallback((column: ColumnSchema, optionValue: string): Promise<void> => {
+		new SharedOptionDeleteModal(app, manager, { column, optionValue }).open()
+		return Promise.resolve()
+	}, [app, manager])
+
+	const closeSelectorEditor = useCallback(() => setEditingCell(null), [])
+	const requestRenameOption = useSelectorOptionRename({
+		manager,
+		dbFile,
+		config,
+		onLocalConfigChange: setConfig,
+		onComplete: closeSelectorEditor,
+	})
+
+	const requestDeleteSharedColumn = useCallback((column: ColumnSchema) => {
+		if (!dbFile || !column.sharedPropertyId) return
+		const definition = manager.sharedProperties.read().properties.find(property => property.id === column.sharedPropertyId)
+		if (!definition) return
+		new SharedPropertyDeleteModal(app, manager, {
+			definition,
+			onComplete: () => setConfig(manager.readConfig(dbFile)),
+		}).open()
+	}, [app, dbFile, manager])
+
 	// ── Colunas TanStack Table ───────────────────────────────────────────────
 
 	const columns = useMemo<ColumnDef<NoteRow>[]>(() => {
@@ -1063,7 +1135,15 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 				enableColumnFilter: col.type !== 'formula' && col.type !== 'lookup' && col.type !== 'relation',
 				enableSorting: col.type !== 'formula' && col.type !== 'lookup' && col.type !== 'relation' && col.type !== 'multiselect',
 			sortingFn: getColumnSortingFn(col.type),
-				header: () => col.propertyScope === 'virtual' ? (
+				header: () => col.propertyScope === 'shared' ? (
+					<SharedColumnHeader
+						column={col}
+						onRename={name => renameSharedColumn(col, name)}
+						onHide={() => saveView(toggleViewProperty(activeView, col))}
+						onDetach={() => detachSharedColumn(col)}
+						onDelete={() => requestDeleteSharedColumn(col)}
+					/>
+				) : col.propertyScope === 'virtual' ? (
 					<div className="nb-header-title">
 						<span>{getPropertyIcon(col) ?? getColumnIconStatic(col.type)}</span><span>{col.name}</span>
 					</div>
@@ -1071,6 +1151,7 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 					<ColumnHeader
 						col={col}
 						schema={config.schema}
+						effectiveSchema={effectiveSchema}
 						onUpdateSchema={updateSchema}
 						onRenameColumn={renameColumn}
 						onChangeType={newType => handleChangeColumnType(col.id, newType)}
@@ -1090,7 +1171,7 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 		}
 
 		return cols
-	}, [config, orderedSchema, selectedVirtualColumns, activeView, updateSchema, renameColumn, handleChangeColumnType, manager, dbFile])
+	}, [config, orderedSchema, selectedVirtualColumns, activeView, updateSchema, renameColumn, renameSharedColumn, detachSharedColumn, requestDeleteSharedColumn, saveView, handleChangeColumnType, manager, dbFile, effectiveSchema])
 
 	// ── Instância da tabela ──────────────────────────────────────────────────
 
@@ -1616,6 +1697,11 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 			await saveView({ ...activeView, virtualColumnIds: toggleVirtualProperty(activeView.virtualColumnIds, fieldId) })
 			return
 		}
+		const effectiveColumn = effectiveSchema.find(column => column.id === fieldId)
+		if (effectiveColumn?.propertyScope === 'shared') {
+			await saveView(toggleViewProperty(activeView, effectiveColumn))
+			return
+		}
 		if (externalView) {
 			const hidden = activeView.hiddenColumns.includes(fieldId)
 				? activeView.hiddenColumns.filter(id => id !== fieldId)
@@ -1627,9 +1713,9 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 			)
 			await updateSchema(newSchema)
 		}
-	}, [externalView, activeView, saveView, config.schema, updateSchema])
+	}, [externalView, activeView, saveView, config.schema, effectiveSchema, updateSchema])
 
-	const isFieldVisible = useCallback((column: ColumnSchema) => column.propertyScope === 'virtual'
+	const isFieldVisible = useCallback((column: ColumnSchema) => column.propertyScope !== 'database'
 		? isPropertyVisibleInView(column, activeView)
 		: (externalView ? column.visible && !activeView.hiddenColumns.includes(column.id) : column.visible),
 	[activeView, externalView])
@@ -1644,11 +1730,12 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 		const newIndex = orderedSchema.findIndex(c => c.id === over.id)
 		if (oldIndex === -1 || newIndex === -1) return
 
-		if (externalView) {
-			const newOrder = arrayMove(orderedSchema, oldIndex, newIndex).map(c => c.id)
+		const reordered = arrayMove(orderedSchema, oldIndex, newIndex)
+		if (externalView || reordered.some(column => column.propertyScope !== 'database')) {
+			const newOrder = reordered.map(c => c.id)
 			await saveView({ ...activeView, columnOrder: newOrder })
 		} else {
-			await updateSchema(arrayMove(orderedSchema, oldIndex, newIndex).filter(column => column.propertyScope !== 'virtual'))
+			await updateSchema(reordered)
 		}
 	}, [orderedSchema, externalView, activeView, saveView, config.schema, updateSchema])
 
@@ -1664,7 +1751,60 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 			width: 150,
 		}
 		await updateSchema([...config.schema, newCol])
+		setAddColumnMenuOpen(false)
 	}
+
+	const attachExistingSharedSelect = async (sharedPropertyId: string) => {
+		if (!dbFile) return
+		const registry = manager.sharedProperties.read()
+		const error = getSharedPropertyAttachmentError(config, registry, sharedPropertyId)
+		if (error) {
+			new Notice(error === 'local-collision' ? t('shared_property_collision_local') : t('shared_property_collision'))
+			return
+		}
+		const nextConfig = attachSharedProperty(config, registry, sharedPropertyId)
+		setConfig(nextConfig)
+		await manager.writeConfig(dbFile, nextConfig)
+		setAddColumnMenuOpen(false)
+	}
+
+	const createSharedSelect = () => {
+		if (!dbFile) return
+		setAddColumnMenuOpen(false)
+		new SharedPropertyEditorModal(app, {
+			initialType: 'select',
+			fixedType: true,
+			showOptions: false,
+			onSave: async value => {
+				const registry = manager.sharedProperties.read()
+				const candidateId = value.id ?? '__new_shared_select__'
+				const candidateRegistry = { ...registry, properties: [...registry.properties, { ...value, id: candidateId }] }
+				const error = getSharedPropertyAttachmentError(config, candidateRegistry, candidateId)
+				if (error) {
+					new Notice(error === 'local-collision' ? t('shared_property_collision_local') : t('shared_property_collision'))
+					throw new Error(error)
+				}
+				const created = await manager.sharedProperties.create(value)
+				const nextConfig = attachSharedProperty(config, manager.sharedProperties.read(), created.id)
+				setConfig(nextConfig)
+				await manager.writeConfig(dbFile, nextConfig)
+			},
+		}).open()
+	}
+
+	const availableSharedSelectors = manager.sharedProperties.read().properties.filter(property =>
+		(property.type === 'select' || property.type === 'status' || property.type === 'multiselect') &&
+		!(config.sharedPropertyIds ?? []).includes(property.id)
+	)
+
+	useEffect(() => {
+		if (!addColumnMenuOpen) return
+		const close = (event: MouseEvent) => {
+			if (!addColumnMenuRef.current?.contains(event.target as Node)) setAddColumnMenuOpen(false)
+		}
+		activeDocument.addEventListener('mousedown', close)
+		return () => activeDocument.removeEventListener('mousedown', close)
+	}, [addColumnMenuOpen])
 
 	// ── Render ───────────────────────────────────────────────────────────────
 
@@ -2199,7 +2339,7 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 		</>)}
 
 		{/* Tabela */}
-			<CellContext.Provider value={{ editingCell, setEditingCell, updateCell, schema: effectiveSchema, relationOptions, updateSchema }}>
+			<CellContext.Provider value={{ editingCell, setEditingCell, updateCell, schema: effectiveSchema, relationOptions, updateSchema: updateSelectorSchema, deleteSharedOption: requestDeleteSharedOption, renameOption: requestRenameOption }}>
 			<div ref={tableWrapperRef} className={`nb-table-wrapper${activeView.wrapText ? ' nb-table--wrap' : ''}${runtimePrefs.clipEllipsis ? '' : ' nb-clip-hard'}`}
 				style={{ '--nb-row-height': activeView.rowHeight === 'compact' ? '28px' : activeView.rowHeight === 'tall' ? '64px' : '36px' } as React.CSSProperties}>
 				<table ref={tableRef} className="nb-table">
@@ -2299,9 +2439,24 @@ export function DatabaseTable({ dbFile, manager, externalView, onViewChange }: D
 												)
 											})}
 											<th className="nb-th nb-th-add-col">
-												<button className="nb-add-col-btn" onClick={() => { void handleAddColumn() }} title={t('add_field')}>
-													+
-												</button>
+												<div className="nb-view-tab-add" ref={addColumnMenuRef}>
+													<button className="nb-add-col-btn" onClick={() => setAddColumnMenuOpen(open => !open)} title={t('add_field')}>+</button>
+													{addColumnMenuOpen && <div className="nb-view-add-menu nb-fields-dropdown">
+														<button className="nb-menu-item" onClick={() => { void handleAddColumn() }}>
+															<span className="nb-menu-item-icon">＋</span><span>{t('local_property_create')}</span>
+														</button>
+														<button className="nb-menu-item" onClick={createSharedSelect}>
+															<span className="nb-menu-item-icon">🔗</span><span>{t('shared_select_create')}</span>
+														</button>
+														{availableSharedSelectors.length > 0 && <>
+															<div className="nb-menu-separator" />
+															<div className="nb-menu-label">{t('shared_select_attach_existing')}</div>
+															{availableSharedSelectors.map(property => <button key={property.id} className="nb-menu-item" onClick={() => { void attachExistingSharedSelect(property.id) }}>
+																<span className="nb-menu-item-icon">🔗</span><span>{property.name}</span>
+															</button>)}
+														</>}
+													</div>}
+												</div>
 											</th>
 										</tr>
 									</SortableContext>

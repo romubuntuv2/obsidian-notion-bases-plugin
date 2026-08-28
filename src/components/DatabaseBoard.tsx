@@ -14,6 +14,7 @@ import { BoardToolbar } from './Board/BoardToolbar'
 import { BoardColumnData, DRAG_TYPE_CARD } from './Board/board-types'
 import { showNoteContextMenu } from './ContextMenu/showNoteContextMenu'
 import { getFieldMenuColumns, getViewPropertyColumns, getVisibleViewProperties, toggleViewProperty } from '../virtual-properties'
+import { useSelectorOptionCreate, useSelectorOptionRename } from '../hooks/useSelectorOptionRename'
 
 interface DatabaseBoardProps {
 	dbFile: TFile | null
@@ -25,7 +26,7 @@ interface DatabaseBoardProps {
 export function DatabaseBoard({ dbFile, manager, externalView, onViewChange }: DatabaseBoardProps) {
 	const app = useApp()
 	const { status: saveStatus, trackSave } = useSaveTracker()
-	const { rows, config, effectiveSchema, loading, activeFilters, setActiveFilters } = useDatabaseRows({
+	const { rows, config, effectiveSchema, loading, activeFilters, setActiveFilters, reload } = useDatabaseRows({
 		app, dbFile, manager, includeSubfolders: externalView.includeSubfolders, externalView,
 	})
 	const [activeView, setActiveView] = useState<ViewConfig>(externalView)
@@ -42,12 +43,12 @@ export function DatabaseBoard({ dbFile, manager, externalView, onViewChange }: D
 	}, [onViewChange])
 
 	const groupableColumns = useMemo(
-		() => config.schema.filter(column => column.type === 'select' || column.type === 'status'),
-		[config.schema]
+		() => effectiveSchema.filter(column => column.type === 'select' || column.type === 'status'),
+		[effectiveSchema]
 	)
 	const groupByColumn = useMemo(
-		() => config.schema.find(column => column.id === activeView.groupByColumnId) ?? groupableColumns[0] ?? null,
-		[config.schema, activeView.groupByColumnId, groupableColumns]
+		() => effectiveSchema.find(column => column.id === activeView.groupByColumnId) ?? groupableColumns[0] ?? null,
+		[effectiveSchema, activeView.groupByColumnId, groupableColumns]
 	)
 	const debouncedFilters = useDebouncedValue(activeFilters, 200)
 	const filteredRows = useMemo(() => applyFilters(rows, debouncedFilters), [rows, debouncedFilters])
@@ -148,6 +149,9 @@ export function DatabaseBoard({ dbFile, manager, externalView, onViewChange }: D
 	const handleCardContextMenu = useCallback((event: React.MouseEvent, file: TFile) => {
 		showNoteContextMenu({ event: event.nativeEvent, app, manager, file })
 	}, [app, manager])
+	const reloadAfterOptionRename = useCallback(() => { void reload() }, [reload])
+	const renameSelectorOption = useSelectorOptionRename({ manager, dbFile, config, onComplete: reloadAfterOptionRename })
+	const createSelectorOption = useSelectorOptionCreate({ manager, dbFile, config })
 
 	if (!dbFile) return <div className="nb-empty-state"><p>{t('no_database_open')}</p></div>
 	if (loading) return <div className="nb-loading">{t('loading')}</div>
@@ -169,7 +173,8 @@ export function DatabaseBoard({ dbFile, manager, externalView, onViewChange }: D
 				onSetCardDragOver={setCardDragOver} onSetColumnDragOver={setColumnDragOver}
 				onSaveView={saveView} onMoveCard={moveCard} onMoveColumn={moveColumn}
 				onAddCard={addCardToColumn} onOpenFile={openFile} onCardDragStart={handleCardDragStart}
-				onCardContextMenu={handleCardContextMenu} />)}
+				onCardContextMenu={handleCardContextMenu} onRenameOption={renameSelectorOption}
+				onCreateOption={createSelectorOption} />)}
 		</div>
 	</div>
 }

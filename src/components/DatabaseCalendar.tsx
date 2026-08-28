@@ -28,6 +28,7 @@ import {
 	getFieldMenuColumns, getPropertyCapabilities, getPropertyIcon, getViewPropertyColumns, getVisibleViewProperties,
 	isPropertyVisibleInView, toggleViewProperty,
 } from '../virtual-properties'
+import { useSelectorOptionCreate, useSelectorOptionRename } from '../hooks/useSelectorOptionRename'
 
 interface DatabaseCalendarProps {
 	dbFile: TFile | null
@@ -40,7 +41,7 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 	const app = useApp()
 	const { status: saveStatus, trackSave } = useSaveTracker()
 	const today = new Date()
-	const { rows, config, effectiveSchema, loading, activeFilters, setActiveFilters } = useDatabaseRows({
+	const { rows, config, effectiveSchema, loading, activeFilters, setActiveFilters, reload } = useDatabaseRows({
 		app, dbFile, manager, includeSubfolders: externalView.includeSubfolders, externalView,
 	})
 	const [activeView, setActiveView] = useState<ViewConfig>(externalView)
@@ -124,9 +125,9 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 	const filteredRows = useMemo(() => applyFilters(rows, debouncedFilters), [rows, debouncedFilters])
 
 	const dateField = useMemo(
-		() => config.schema.find(c => c.id === activeView.calendarDateField && c.type === 'date'
+		() => effectiveSchema.find(c => c.id === activeView.calendarDateField && c.type === 'date'
 			&& getPropertyCapabilities(c).editable) ?? null,
-		[config.schema, activeView.calendarDateField]
+		[effectiveSchema, activeView.calendarDateField]
 	)
 
 	const visibleCols = useMemo(
@@ -134,7 +135,7 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 		[effectiveSchema, activeView]
 	)
 	const compactCardColumns = useMemo(() => visibleCols.filter(col =>
-		(col.type === 'date' && getPropertyCapabilities(col).editable) || col.propertyScope === 'virtual'
+		(col.type === 'date' && getPropertyCapabilities(col).editable) || col.propertyScope !== 'database'
 	), [visibleCols])
 	const viewPropertyColumns = useMemo(() => getViewPropertyColumns(effectiveSchema), [effectiveSchema])
 	const fieldMenuColumns = getFieldMenuColumns(effectiveSchema)
@@ -321,6 +322,9 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 	const handleCardContextMenu = useCallback((event: React.MouseEvent, row: NoteRow) => {
 		showNoteContextMenu({ event: event.nativeEvent, app, manager, file: row._file })
 	}, [app, manager])
+	const reloadAfterOptionRename = useCallback(() => { void reload() }, [reload])
+	const renameSelectorOption = useSelectorOptionRename({ manager, dbFile, config, onComplete: reloadAfterOptionRename })
+	const createSelectorOption = useSelectorOptionCreate({ manager, dbFile, config })
 
 	if (!dbFile) return <div className="nb-empty-state"><p>{t('no_database_open')}</p></div>
 	if (loading) return <div className="nb-loading">{t('loading')}</div>
@@ -346,7 +350,7 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 								<span className="nb-menu-item-icon">—</span>
 								<span>{t('none_value')}</span>
 							</button>
-							{config.schema.filter(c => c.type === 'date' && getPropertyCapabilities(c).editable).map(col => (
+							{effectiveSchema.filter(c => c.type === 'date' && getPropertyCapabilities(c).editable).map(col => (
 								<button
 									key={col.id}
 									className={`nb-menu-item${activeView.calendarDateField === col.id ? ' nb-menu-item--active' : ''}`}
@@ -490,18 +494,22 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 							onDayClick={handleDayClick} onCardDragStart={handleCardDragStart}
 							onDayDragOver={handleDayDragOver} onDayDragLeave={handleDayDragLeave}
 							onDayDrop={handleDayDrop} onOpenRow={row => openFile(row._file)}
-							onCardContextMenu={handleCardContextMenu} />
+							onCardContextMenu={handleCardContextMenu} onRenameOption={renameSelectorOption}
+							onCreateOption={createSelectorOption} />
 						: <DatabaseMonthView calendarCells={calendarCells} cellProps={{
 							currentYear, currentMonth, todayDay, dragOverDay, rowsByDate,
 							manager, activeView, dateField, schema: effectiveSchema, visibleColumns: visibleCols,
 							onOpenFile: openFile, onDayClick: handleDayClick, onCardDragStart: handleCardDragStart,
 							onCardContextMenu: handleCardContextMenu,
+							onRenameOption: renameSelectorOption,
+							onCreateOption: createSelectorOption,
 							onDayDragOver: handleDayDragOver, onDayDragLeave: handleDayDragLeave, onDayDrop: handleDayDrop,
 						}} />
 					}
 					{noDateRows.length > 0 && <DatabaseNoDateRows rows={noDateRows}
 						manager={manager} visibleColumns={compactCardColumns} onOpenFile={openFile}
-						onCardDragStart={handleCardDragStart} onCardContextMenu={handleCardContextMenu} />}
+						onCardDragStart={handleCardDragStart} onCardContextMenu={handleCardContextMenu}
+						onRenameOption={renameSelectorOption} onCreateOption={createSelectorOption} />}
 				</div>
 			)}
 		</div>

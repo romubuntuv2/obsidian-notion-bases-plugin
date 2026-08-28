@@ -1,10 +1,15 @@
-import { App, Modal, Setting, TFile } from 'obsidian'
-import { ColumnType, DatabaseConfig, FolderArrangementConfig } from './types'
+import { App, Modal, Notice, Setting, TFile } from 'obsidian'
+import { ColumnType, DatabaseConfig, FolderArrangementConfig, SharedPropertyDefinition } from './types'
 import { TemplatePickerModal } from './template-picker-modal'
 import { FolderPickerModal } from './folder-picker-modal'
 import { DatabaseManager } from './database-manager'
 import { FolderArrangementPreviewModal } from './folder-arrangement-preview-modal'
 import { t } from './i18n'
+import {
+	attachSharedProperty, detachSharedProperty, getSharedPropertyAttachmentError, resolveAttachedSharedProperties,
+} from './shared-properties'
+import { SharedPropertyEditorModal } from './shared-property-editor-modal'
+import { SharedPropertyDeleteModal } from './shared-property-deletion-modals'
 
 const ARRANGEMENT_SUPPORTED_TYPES: ColumnType[] = ['text', 'select', 'status', 'date']
 
@@ -13,6 +18,7 @@ type SettingsUpdate = {
 	templateFolder?: string
 	askTemplateOnCreate?: boolean
 	folderArrangement?: FolderArrangementConfig
+	sharedPropertyIds?: string[]
 }
 
 export class DatabaseSettingsModal extends Modal {
@@ -122,8 +128,128 @@ export class DatabaseSettingsModal extends Modal {
 					await this.onSave({ askTemplateOnCreate: v })
 				}))
 
+		// ── Shared properties ─────────────────────────────────────────────
+		this.renderSharedPropertiesSection(contentEl)
+
 		// ── Folder arrangement ────────────────────────────────────────────
 		this.renderArrangementSection(contentEl)
+	}
+
+	private renderSharedPropertiesSection(contentEl: HTMLElement): void {
+		if (!this.manager || !this.dbFile) return
+		const manager = this.manager
+		const registry = manager.sharedProperties.read()
+		const section = contentEl.createDiv({ cls: 'nb-db-settings-arrangement' })
+		section.createEl('h3', { text: t('shared_properties_title') })
+		section.createEl('p', { text: t('shared_properties_desc'), cls: 'nb-db-settings-arrangement-desc' })
+
+		const attached = resolveAttachedSharedProperties(registry, this.config.sharedPropertyIds)
+		const list = section.createDiv({ cls: 'nb-arr-property-list' })
+		if (attached.definitions.length === 0) {
+			list.createEl('p', { text: t('shared_properties_none'), cls: 'nb-arr-empty' })
+		}
+		for (const definition of attached.definitions) {
+			const row = list.createDiv({ cls: 'nb-arr-property-row' })
+			row.createSpan({ cls: 'nb-arr-property-name', text: `${definition.name} · ${definition.storageKey}` })
+			const editButton = row.createEl('button', { text: t('shared_property_edit'), cls: 'nb-arr-btn' })
+			editButton.onclick = () => this.openSharedPropertyEditor(definition)
+			const detachButton = row.createEl('button', { text: t('shared_property_detach'), cls: 'nb-arr-btn nb-arr-btn-remove' })
+			detachButton.onclick = async () => {
+				this.config = detachSharedProperty(this.config, definition.id)
+				await this.onSave({ sharedPropertyIds: this.config.sharedPropertyIds })
+				this.onOpen()
+			}
+			const deleteButton = row.createEl('button', { text: t('shared_property_delete_menu'), cls: 'nb-arr-btn nb-arr-btn-remove' })
+			deleteButton.onclick = () => {
+				new SharedPropertyDeleteModal(this.app, manager, {
+					definition,
+					onComplete: () => {
+						this.config = manager.readConfig(this.dbFile!)
+						this.onOpen()
+					},
+				}).open()
+			}
+		}
+
+		for (const missingId of attached.missingReferenceIds) {
+			const row = list.createDiv({ cls: 'nb-arr-property-row' })
+			row.createSpan({ cls: 'nb-arr-property-name', text: `${t('shared_property_missing')} · ${missingId}` })
+			const detachButton = row.createEl('button', { text: t('shared_property_detach'), cls: 'nb-arr-btn nb-arr-btn-remove' })
+			detachButton.onclick = async () => {
+				this.config = detachSharedProperty(this.config, missingId)
+				await this.onSave({ sharedPropertyIds: this.config.sharedPropertyIds })
+				this.onOpen()
+			}
+		}
+
+		const available = registry.properties.filter(definition => !(this.config.sharedPropertyIds ?? []).includes(definition.id))
+		if (available.length > 0) {
+			const addRow = section.createDiv({ cls: 'nb-arr-add-row' })
+			const select = addRow.createEl('select', { cls: 'nb-arr-select' })
+			select.createEl('option', { text: t('shared_property_attach_placeholder'), value: '' })
+			for (const definition of available) {
+				select.createEl('option', { text: `${definition.name} · ${definition.storageKey}`, value: definition.id })
+			}
+			const attachButton = addRow.createEl('button', { text: t('shared_property_attach'), cls: 'mod-cta nb-arr-add-btn' })
+			attachButton.onclick = async () => {
+				if (!select.value) return
+				const error = getSharedPropertyAttachmentError(this.config, registry, select.value)
+				if (error) {
+					new Notice(error === 'local-collision' ? t('shared_property_collision_local') : t('shared_property_collision'))
+					return
+				}
+				this.config = attachSharedProperty(this.config, registry, select.value)
+				await this.onSave({ sharedPropertyIds: this.config.sharedPropertyIds })
+				this.onOpen()
+			}
+		}
+
+		const createButton = section.createEl('button', {
+			text: t('shared_property_create'),
+			cls: 'nb-arr-preview-btn',
+		})
+		createButton.onclick = () => this.openSharedPropertyEditor()
+	}
+
+	private openSharedPropertyEditor(definition?: SharedPropertyDefinition): void {
+		if (!this.manager) return
+		new SharedPropertyEditorModal(this.app, {
+			definition,
+			onSave: async value => {
+				try {
+					if (definition) {
+						await this.manager!.sharedProperties.update({ ...definition, ...value, id: definition.id })
+					} else {
+						const currentRegistry = this.manager!.sharedProperties.read()
+						const candidateId = value.id ?? '__new_shared_property__'
+						const candidate = { ...value, id: candidateId }
+						const previewRegistry = { ...currentRegistry, properties: [...currentRegistry.properties, candidate] }
+						const previewError = getSharedPropertyAttachmentError(this.config, previewRegistry, candidateId)
+						if (previewError) {
+							new Notice(previewError === 'local-collision'
+								? t('shared_property_collision_local') : t('shared_property_collision'))
+							throw new Error(previewError)
+						}
+						const created = await this.manager!.sharedProperties.create(value)
+						const registry = this.manager!.sharedProperties.read()
+						const error = getSharedPropertyAttachmentError(this.config, registry, created.id)
+						if (!error) {
+							this.config = attachSharedProperty(this.config, registry, created.id)
+							await this.onSave({ sharedPropertyIds: this.config.sharedPropertyIds })
+						}
+					}
+					this.onOpen()
+				} catch (error) {
+					const message = error instanceof Error ? error.message : ''
+					new Notice(message === 'duplicate-shared-property-key'
+						? t('shared_property_duplicate_key')
+						: message === 'shared-property-option-removal-requires-impact-scan'
+							? t('shared_property_option_removal_blocked')
+							: t('shared_property_invalid'))
+					throw error
+				}
+			},
+		}).open()
 	}
 
 	private renderArrangementSection(contentEl: HTMLElement): void {

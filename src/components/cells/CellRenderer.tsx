@@ -20,6 +20,9 @@ import { createContext, useContext } from 'react'
 import { stringifyScalar } from '../../value-utils'
 import { displayLocale, formatDateText } from '../../format-cell-value'
 import { getPropertyCapabilities } from '../../virtual-properties'
+import { RenamableSelectorOption } from '../EditableFields/RenamableSelectorOption'
+import { SelectorOptionCreateInput } from '../EditableFields/SelectorOptionCreateInput'
+import { SELECTOR_OPTION_COLORS } from '../../shared-properties'
 
 interface CellContextType {
 	editingCell: { rowIndex: number; columnId: string } | null
@@ -28,6 +31,8 @@ interface CellContextType {
 	schema: ColumnSchema[]
 	relationOptions: Map<string, string[]>
 	updateSchema: (newSchema: ColumnSchema[]) => Promise<void>
+	deleteSharedOption: (column: ColumnSchema, optionValue: string) => Promise<void>
+	renameOption: (column: ColumnSchema, oldValue: string, newValue: string, currentOptions: SelectOption[]) => Promise<void>
 }
 
 export const CellContext = createContext<CellContextType | null>(null)
@@ -535,16 +540,11 @@ function PhoneCell({ value, isEditing, onStartEdit, onCommit, onCancel }: {
 
 // ── SelectCell ───────────────────────────────────────────────────────────────
 
-const SELECT_COLORS = [
-	'#e2d9f3', '#d1e8ff', '#d4f1c0', '#fde8c8',
-	'#ffd6d6', '#d6f0f0', '#f0d6f0', '#f0f0d6',
-]
-
 function getOptionColor(options: SelectOption[], value: string): string {
 	const opt = options.find(o => o.value === value)
 	if (opt?.color) return opt.color
 	const idx = options.findIndex(o => o.value === value)
-	return SELECT_COLORS[idx % SELECT_COLORS.length] ?? '#e8e8e8'
+	return SELECTOR_OPTION_COLORS[idx % SELECTOR_OPTION_COLORS.length] ?? '#e8e8e8'
 }
 
 function getContrastTextColor(hex: string): string {
@@ -565,12 +565,11 @@ function SelectCell({ value, col, isEditing, onStartEdit, onCommit, onCancel }: 
 	onCommit: (v: string | null) => void
 	onCancel: () => void
 }) {
-	const { updateSchema, schema } = useCellContext()
+	const { updateSchema, schema, deleteSharedOption, renameOption } = useCellContext()
 	const wrapperRef = useRef<HTMLDivElement>(null)
 	const dropdownRef = useRef<HTMLDivElement>(null)
 	const colorPickerRef = useRef<HTMLDivElement>(null)
 	const [dropPos, setDropPos] = useState<{ top: number; left: number; width: number } | null>(null)
-	const [newOptionName, setNewOptionName] = useState('')
 	const [colorPickerFor, setColorPickerFor] = useState<string | null>(null)
 	const [colorPickerPos, setColorPickerPos] = useState<{ top: number; left: number } | null>(null)
 	const [localColors, setLocalColors] = useState<Record<string, string>>({})
@@ -620,7 +619,6 @@ function SelectCell({ value, col, isEditing, onStartEdit, onCommit, onCancel }: 
 			setColorPickerFor(null)
 			return
 		}
-		setNewOptionName('')
 		setLocalColors({})
 		pendingColorsRef.current = {}
 		if (wrapperRef.current) {
@@ -641,16 +639,20 @@ function SelectCell({ value, col, isEditing, onStartEdit, onCommit, onCancel }: 
 	const addNewOption = async (name: string) => {
 		const trimmed = name.trim()
 		if (!trimmed || options.some(o => o.value === trimmed)) return
-		const color = SELECT_COLORS[options.length % SELECT_COLORS.length]
+		const color = SELECTOR_OPTION_COLORS[options.length % SELECTOR_OPTION_COLORS.length]
 		const newOptions = [...options, { value: trimmed, color }]
 		const newSchema = schema.map(c => c.id === col.id ? { ...c, options: newOptions } : c)
 		await updateSchema(newSchema)
 		onCommit(trimmed)
-		setNewOptionName('')
 	}
 
 	const deleteOption = async (optValue: string, e: React.MouseEvent) => {
 		e.stopPropagation()
+		if (col.propertyScope === 'shared') {
+			onCancel()
+			await deleteSharedOption(col, optValue)
+			return
+		}
 		const newOptions = options.filter(o => o.value !== optValue)
 		const newSchema = schema.map(c => c.id === col.id ? { ...c, options: newOptions } : c)
 		await updateSchema(newSchema)
@@ -663,23 +665,18 @@ function SelectCell({ value, col, isEditing, onStartEdit, onCommit, onCancel }: 
 			className="nb-select-dropdown"
 			style={{ position: 'fixed', top: dropPos.top, left: dropPos.left, minWidth: dropPos.width, zIndex: 9999 }}
 		>
-			<input
-				className="nb-select-new-input"
-				type="text"
-				placeholder={t('select_create_placeholder')}
-				value={newOptionName}
-				autoFocus
-				onChange={e => setNewOptionName(e.target.value)}
-				onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void addNewOption(newOptionName) } }}
-			/>
+			<SelectorOptionCreateInput existingValues={options.map(option => option.value)}
+				onCreate={async name => { await addNewOption(name) }} onCancel={onCancel} />
 			<button className="nb-select-option nb-select-clear" onClick={() => onCommit(null)}>
 				{t('select_clear')}
 			</button>
 			{options.map(opt => (
 				<div key={opt.value} className={`nb-select-option-row ${value === opt.value ? 'nb-select-option-row--active' : ''}`}>
-					<button
+					<RenamableSelectorOption
 						className={`nb-select-option ${value === opt.value ? 'nb-select-option--active' : ''}`}
-						onClick={() => onCommit(opt.value)}
+						value={opt.value}
+						onSelect={() => onCommit(opt.value)}
+						onRename={newValue => renameOption(col, opt.value, newValue, options)}
 					>
 						<span
 							className="nb-select-badge"
@@ -687,7 +684,7 @@ function SelectCell({ value, col, isEditing, onStartEdit, onCommit, onCancel }: 
 						>
 							{opt.value}
 						</span>
-					</button>
+					</RenamableSelectorOption>
 					<button
 						className={`nb-status-color-swatch ${colorPickerFor === opt.value ? 'nb-status-color-swatch--active' : ''}`}
 						title={t('tooltip_change_color')}
@@ -773,11 +770,10 @@ function StatusCell({ value, col, isEditing, onStartEdit, onCommit, onCancel }: 
 	onCommit: (v: string | null) => void
 	onCancel: () => void
 }) {
-	const { updateSchema, schema } = useCellContext()
+	const { updateSchema, schema, deleteSharedOption, renameOption } = useCellContext()
 	const wrapperRef = useRef<HTMLDivElement>(null)
 	const dropdownRef = useRef<HTMLDivElement>(null)
 	const [dropPos, setDropPos] = useState<{ top: number; left: number; width: number } | null>(null)
-	const [newStatusName, setNewStatusName] = useState('')
 	const [colorPickerFor, setColorPickerFor] = useState<string | null>(null)
 	const [colorPickerPos, setColorPickerPos] = useState<{ top: number; left: number } | null>(null)
 	const colorPickerRef = useRef<HTMLDivElement>(null)
@@ -829,7 +825,6 @@ function StatusCell({ value, col, isEditing, onStartEdit, onCommit, onCancel }: 
 			setColorPickerFor(null)
 			return
 		}
-		setNewStatusName('')
 		setLocalColors({})
 		pendingColorsRef.current = {}
 		if (wrapperRef.current) {
@@ -847,15 +842,12 @@ function StatusCell({ value, col, isEditing, onStartEdit, onCommit, onCancel }: 
 		return () => activeDocument.removeEventListener('mousedown', handler)
 	}, [colorPickerFor])
 
-	const addNewStatus = async () => {
-		const name = newStatusName.trim()
-		if (!name) return
-		const color = SELECT_COLORS[options.length % SELECT_COLORS.length]
+	const addNewStatus = async (name: string) => {
+		const color = SELECTOR_OPTION_COLORS[options.length % SELECTOR_OPTION_COLORS.length]
 		const newOption: SelectOption = { value: name, color }
 		const newOptions = [...options, newOption]
 		const newSchema = schema.map(c => c.id === col.id ? { ...c, options: newOptions } : c)
 		await updateSchema(newSchema)
-		setNewStatusName('')
 		onCommit(name)
 	}
 
@@ -865,14 +857,18 @@ function StatusCell({ value, col, isEditing, onStartEdit, onCommit, onCancel }: 
 			className="nb-select-dropdown"
 			style={{ position: 'fixed', top: dropPos.top, left: dropPos.left, minWidth: dropPos.width, zIndex: 9999 }}
 		>
+			<SelectorOptionCreateInput existingValues={options.map(option => option.value)}
+				onCreate={addNewStatus} onCancel={onCancel} />
 			<button className="nb-select-option nb-select-clear" onClick={() => onCommit(null)}>
 				{t('select_clear')}
 			</button>
 			{options.map(opt => (
 				<div key={opt.value} className={`nb-status-option-row ${value === opt.value ? 'nb-status-option-row--active' : ''}`}>
-					<button
+					<RenamableSelectorOption
 						className={`nb-select-option nb-status-option-btn ${value === opt.value ? 'nb-select-option--active' : ''}`}
-						onClick={() => onCommit(opt.value)}
+						value={opt.value}
+						onSelect={() => onCommit(opt.value)}
+						onRename={newValue => renameOption(col, opt.value, newValue, options)}
 					>
 						<span
 							className="nb-select-badge"
@@ -880,7 +876,7 @@ function StatusCell({ value, col, isEditing, onStartEdit, onCommit, onCancel }: 
 						>
 							{opt.value}
 						</span>
-					</button>
+					</RenamableSelectorOption>
 					<button
 						className={`nb-status-color-swatch ${colorPickerFor === opt.value ? 'nb-status-color-swatch--active' : ''}`}
 						title={t('tooltip_change_color')}
@@ -897,6 +893,11 @@ function StatusCell({ value, col, isEditing, onStartEdit, onCommit, onCancel }: 
 						title={t('tooltip_delete_status')}
 						onClick={(e) => {
 							e.stopPropagation()
+							if (col.propertyScope === 'shared') {
+								onCancel()
+								void deleteSharedOption(col, opt.value)
+								return
+							}
 							const newOptions = options.filter(o => o.value !== opt.value)
 							const newSchema = schema.map(c => c.id === col.id ? { ...c, options: newOptions } : c)
 							void updateSchema(newSchema)
@@ -905,24 +906,6 @@ function StatusCell({ value, col, isEditing, onStartEdit, onCommit, onCancel }: 
 					>×</button>
 				</div>
 			))}
-			<div className="nb-status-new-row">
-				<input
-					className="nb-status-new-input"
-					placeholder={t('status_new_placeholder')}
-					value={newStatusName}
-					onChange={e => setNewStatusName(e.target.value)}
-					onKeyDown={e => {
-						if (e.key === 'Enter') { e.preventDefault(); void addNewStatus() }
-						if (e.key === 'Escape') onCancel()
-						e.stopPropagation()
-					}}
-				/>
-				<button
-					className="nb-status-new-btn"
-					onClick={() => { void addNewStatus() }}
-					disabled={!newStatusName.trim()}
-				>+</button>
-			</div>
 		</div>,
 		activeDocument.body
 	) : null
@@ -989,12 +972,11 @@ function MultiSelectCell({ value, col, isEditing, onStartEdit, onCommit, onCance
 	onCommit: (v: string[]) => void
 	onCancel: () => void
 }) {
-	const { updateSchema, schema } = useCellContext()
+	const { updateSchema, schema, deleteSharedOption, renameOption } = useCellContext()
 	const wrapperRef = useRef<HTMLDivElement>(null)
 	const dropdownRef = useRef<HTMLDivElement>(null)
 	const colorPickerRef = useRef<HTMLDivElement>(null)
 	const [dropPos, setDropPos] = useState<{ top: number; left: number; width: number } | null>(null)
-	const [newOptionName, setNewOptionName] = useState('')
 	const [colorPickerFor, setColorPickerFor] = useState<string | null>(null)
 	const [colorPickerPos, setColorPickerPos] = useState<{ top: number; left: number } | null>(null)
 	const [localColors, setLocalColors] = useState<Record<string, string>>({})
@@ -1044,7 +1026,6 @@ function MultiSelectCell({ value, col, isEditing, onStartEdit, onCommit, onCance
 			setColorPickerFor(null)
 			return
 		}
-		setNewOptionName('')
 		setLocalColors({})
 		pendingColorsRef.current = {}
 		if (wrapperRef.current) {
@@ -1072,16 +1053,20 @@ function MultiSelectCell({ value, col, isEditing, onStartEdit, onCommit, onCance
 	const addNewOption = async (name: string) => {
 		const trimmed = name.trim()
 		if (!trimmed || options.some(o => o.value === trimmed)) return
-		const color = SELECT_COLORS[options.length % SELECT_COLORS.length]
+		const color = SELECTOR_OPTION_COLORS[options.length % SELECTOR_OPTION_COLORS.length]
 		const newOptions = [...options, { value: trimmed, color }]
 		const newSchema = schema.map(c => c.id === col.id ? { ...c, options: newOptions } : c)
 		await updateSchema(newSchema)
 		onCommit([...value, trimmed])
-		setNewOptionName('')
 	}
 
 	const deleteOption = async (optValue: string, e: React.MouseEvent) => {
 		e.stopPropagation()
+		if (col.propertyScope === 'shared') {
+			onCancel()
+			await deleteSharedOption(col, optValue)
+			return
+		}
 		const newOptions = options.filter(o => o.value !== optValue)
 		const newSchema = schema.map(c => c.id === col.id ? { ...c, options: newOptions } : c)
 		await updateSchema(newSchema)
@@ -1094,20 +1079,15 @@ function MultiSelectCell({ value, col, isEditing, onStartEdit, onCommit, onCance
 			className="nb-select-dropdown"
 			style={{ position: 'fixed', top: dropPos.top, left: dropPos.left, minWidth: dropPos.width, zIndex: 9999 }}
 		>
-			<input
-				className="nb-select-new-input"
-				type="text"
-				placeholder={t('select_create_placeholder')}
-				value={newOptionName}
-				autoFocus
-				onChange={e => setNewOptionName(e.target.value)}
-				onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void addNewOption(newOptionName) } }}
-			/>
+			<SelectorOptionCreateInput existingValues={options.map(option => option.value)}
+				onCreate={async name => { await addNewOption(name) }} onCancel={onCancel} />
 			{options.map(opt => (
 				<div key={opt.value} className={`nb-select-option-row ${value.includes(opt.value) ? 'nb-select-option-row--active' : ''}`}>
-					<button
+					<RenamableSelectorOption
 						className={`nb-select-option ${value.includes(opt.value) ? 'nb-select-option--active' : ''}`}
-						onClick={() => toggle(opt.value)}
+						value={opt.value}
+						onSelect={() => toggle(opt.value)}
+						onRename={newValue => renameOption(col, opt.value, newValue, options)}
 					>
 						<span className={`nb-checkbox-indicator ${value.includes(opt.value) ? 'nb-checkbox-indicator--checked' : ''}`} />
 						<span
@@ -1116,7 +1096,7 @@ function MultiSelectCell({ value, col, isEditing, onStartEdit, onCommit, onCance
 						>
 							{opt.value}
 						</span>
-					</button>
+					</RenamableSelectorOption>
 					<button
 						className={`nb-status-color-swatch ${colorPickerFor === opt.value ? 'nb-status-color-swatch--active' : ''}`}
 						title={t('tooltip_change_color')}

@@ -4,14 +4,19 @@ import { ColumnSchema, NoteRow } from '../../types'
 import { stringifyScalar } from '../../value-utils'
 import EditableDate from './EditableDate'
 import EditableSelector from './EditableSelector'
+import { CreateSelectorOptionHandler, RenameSelectorOptionHandler } from '../../hooks/useSelectorOptionRename'
 
 interface EditableCardPropertiesProps {
 	row: NoteRow
 	columns: ColumnSchema[]
 	manager: DatabaseManager
+	onRenameOption: RenameSelectorOptionHandler
+	onCreateOption: CreateSelectorOptionHandler
 }
 
-export default function EditableCardProperties({ row, columns, manager }: EditableCardPropertiesProps) {
+export default function EditableCardProperties({
+	row, columns, manager, onRenameOption, onCreateOption,
+}: EditableCardPropertiesProps) {
 	if (columns.length === 0) return null
 
 	return <div className="nb-board-card-props nb-board-card-props--inline">
@@ -24,7 +29,8 @@ export default function EditableCardProperties({ row, columns, manager }: Editab
 			const isSelector = column.type === 'select' || column.type === 'status' || column.type === 'multiselect'
 			if (isSelector) {
 				return <EditableSelector key={column.id} column={column} value={value}
-					file={row._file} manager={manager} inlineFields={row._inlineFields} />
+					file={row._file} manager={manager} inlineFields={row._inlineFields}
+					onRenameOption={onRenameOption} onCreateOption={onCreateOption} />
 			}
 			if (value === null || value === undefined || stringifyScalar(value).trim() === '') return null
 			const display = Array.isArray(value) ? (value as string[]).join(', ') : stringifyScalar(value)

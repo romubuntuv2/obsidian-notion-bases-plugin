@@ -6,6 +6,7 @@ import { t } from '../../i18n'
 import { dateKey } from './calendar-utils'
 import { CardContextMenuHandler, CardDragHandler, DayClickHandler, DayDragLeaveHandler, DayDragOverHandler, DayDropHandler, RowsByDate } from './calendar-types'
 import { DatabaseMonthlyCard } from './DatabaseMonthlyCard'
+import { CreateSelectorOptionHandler, RenameSelectorOptionHandler } from '../../hooks/useSelectorOptionRename'
 
 interface DatabaseMonthCellProps {
 	day: number | null
@@ -26,13 +27,15 @@ interface DatabaseMonthCellProps {
 	onDayDragOver: DayDragOverHandler
 	onDayDragLeave: DayDragLeaveHandler
 	onDayDrop: DayDropHandler
+	onRenameOption: RenameSelectorOptionHandler
+	onCreateOption: CreateSelectorOptionHandler
 }
 
 export function DatabaseMonthCell(props: DatabaseMonthCellProps) {
 	const { day, currentYear, currentMonth, todayDay, dragOverDay, rowsByDate,
 		manager, activeView, dateField, schema, visibleColumns,
 		onOpenFile, onDayClick, onCardDragStart, onCardContextMenu,
-		onDayDragOver, onDayDragLeave, onDayDrop } = props
+		onDayDragOver, onDayDragLeave, onDayDrop, onRenameOption, onCreateOption } = props
 	if (day === null) return <div className="nb-cal-monthly-cell nb-cal-monthly-cell--outside" />
 	const isToday = day === todayDay
 	const dayRows = rowsByDate.get(dateKey(currentYear, currentMonth, day)) ?? []
@@ -47,7 +50,8 @@ export function DatabaseMonthCell(props: DatabaseMonthCellProps) {
 		<div className="nb-cal-monthly-cell-body">
 			{dayRows.map(row => <DatabaseMonthlyCard key={row._file.path} row={row}
 				manager={manager} activeView={activeView} dateField={dateField} schema={schema} visibleColumns={visibleColumns}
-				onOpenFile={onOpenFile} onCardDragStart={onCardDragStart} onContextMenu={onCardContextMenu} />)}
+				onOpenFile={onOpenFile} onCardDragStart={onCardDragStart} onContextMenu={onCardContextMenu}
+				onRenameOption={onRenameOption} onCreateOption={onCreateOption} />)}
 		</div>
 	</div>
 }

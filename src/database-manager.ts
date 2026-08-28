@@ -10,14 +10,33 @@ import {
 	InlineFieldMeta,
 	NoteRow,
 	RollupFunction,
+	SelectOption,
+	SharedPropertyDefinition,
 	ViewConfig,
 } from './types'
 import { parseInlineFields, frontmatterLineCount } from './inline-fields'
 import { TemplatePickerModal } from './template-picker-modal'
 import { formatTimestampLocal, isRecord, stringifyScalar } from './value-utils'
-import { readVirtualProperty } from './virtual-properties'
+import { readVirtualProperty, resolveEffectiveSchema } from './virtual-properties'
+import {
+	appendSelectorOption, renameSelectorOption, resolveAttachedSharedProperties, resolveRenamedOptionValue, resolveSharedOptionRemovalValue, sharedDefinitionToColumn,
+	sharedDefinitionToLocalColumn, sharedValueContainsOption, SHARED_PROPERTIES_REGISTRY_PATH,
+	SharedOptionRemovalMode, SharedPropertyRegistryStore,
+} from './shared-properties'
 
 export const DATABASE_MARKER = 'notion-bases'
+
+export interface SharedValueImpact {
+	file: TFile
+	value: unknown
+	inlineFields?: Record<string, InlineFieldMeta>
+}
+
+export interface SharedPropertyDeletionImpact {
+	definition: SharedPropertyDefinition
+	databases: Array<{ file: TFile; config: DatabaseConfig }>
+	notesWithValues: number
+}
 
 export function sanitizeSegment(s: string): string {
 	return s.replace(/[/\\:*?"<>|]/g, '').replace(/\s+/g, ' ').trim()
@@ -26,8 +45,11 @@ export function sanitizeSegment(s: string): string {
 export class DatabaseManager {
 	readInlineFields = false
 	pageSize = 0
+	readonly sharedProperties: SharedPropertyRegistryStore
 
-	constructor(private app: App, private databaseFileName: string) {}
+	constructor(private app: App, private databaseFileName: string) {
+		this.sharedProperties = new SharedPropertyRegistryStore(app)
+	}
 
 	// ── Identificação ──────────────────────────────────────────────────────
 
@@ -73,6 +95,9 @@ export class DatabaseManager {
 			schema,
 			views: Array.isArray(fm['views']) && (fm['views'] as unknown[]).length > 0 ? fm['views'] as ViewConfig[] : [DEFAULT_VIEW],
 			virtualPropertiesVersion: typeof fm['virtualPropertiesVersion'] === 'number' ? fm['virtualPropertiesVersion'] : undefined,
+			sharedPropertyIds: Array.isArray(fm['sharedPropertyIds'])
+				? Array.from(new Set((fm['sharedPropertyIds'] as unknown[]).filter((value): value is string => typeof value === 'string')))
+				: [],
 			templatePath: typeof fm['templatePath'] === 'string' && fm['templatePath'] ? fm['templatePath'] : undefined,
 			templateFolder: typeof fm['templateFolder'] === 'string' && fm['templateFolder'] ? fm['templateFolder'] : undefined,
 			askTemplateOnCreate: fm['askTemplateOnCreate'] === true,
@@ -86,6 +111,8 @@ export class DatabaseManager {
 			fm['schema'] = config.schema
 			fm['views'] = config.views
 			fm['virtualPropertiesVersion'] = config.virtualPropertiesVersion ?? 1
+			if ((config.sharedPropertyIds ?? []).length > 0) fm['sharedPropertyIds'] = config.sharedPropertyIds
+			else delete fm['sharedPropertyIds']
 			if (config.templatePath) fm['templatePath'] = config.templatePath
 			else delete fm['templatePath']
 			if (config.templateFolder) fm['templateFolder'] = config.templateFolder
@@ -103,6 +130,250 @@ export class DatabaseManager {
 		})
 	}
 
+	resolveConfigSchema(config: DatabaseConfig): ColumnSchema[] {
+		const attached = resolveAttachedSharedProperties(
+			this.sharedProperties.read(),
+			config.sharedPropertyIds,
+		)
+		return resolveEffectiveSchema(config.schema, attached.columns).schema
+	}
+
+	private getSharedPropertyDefinition(sharedPropertyId: string): SharedPropertyDefinition {
+		const definition = this.sharedProperties.read().properties.find(property => property.id === sharedPropertyId)
+		if (!definition) throw new Error('missing-shared-property')
+		return definition
+	}
+
+	private getDatabasesReferencingSharedProperty(sharedPropertyId: string): Array<{ file: TFile; config: DatabaseConfig }> {
+		return this.getAllDatabases().flatMap(file => {
+			const config = this.readConfig(file)
+			return (config.sharedPropertyIds ?? []).includes(sharedPropertyId) ? [{ file, config }] : []
+		})
+	}
+
+	private getSharedPropertyValueFiles(sharedPropertyId: string): TFile[] {
+		const files = new Map<string, TFile>()
+		for (const { file, config } of this.getDatabasesReferencingSharedProperty(sharedPropertyId)) {
+			const includeSubfolders = config.views.some(view => !!view.includeSubfolders)
+			for (const note of this.getNotesInDatabase(file, includeSubfolders)) files.set(note.path, note)
+		}
+		return Array.from(files.values())
+	}
+
+	private async getSharedValueImpacts(
+		definition: SharedPropertyDefinition,
+		predicate: (value: unknown) => boolean,
+	): Promise<SharedValueImpact[]> {
+		const column = sharedDefinitionToColumn(definition)
+		const impacts: SharedValueImpact[] = []
+		for (const file of this.getSharedPropertyValueFiles(definition.id)) {
+			const row = await this.getNoteData(file, [column])
+			const value = row[definition.storageKey]
+			if (predicate(value)) impacts.push({ file, value, inlineFields: row._inlineFields })
+		}
+		return impacts
+	}
+
+	async getSharedOptionImpacts(sharedPropertyId: string, optionValue: string): Promise<SharedValueImpact[]> {
+		const definition = this.getSharedPropertyDefinition(sharedPropertyId)
+		return this.getSharedValueImpacts(definition, value => sharedValueContainsOption(value, optionValue))
+	}
+
+	async removeSharedOption(
+		sharedPropertyId: string,
+		optionValue: string,
+		mode: SharedOptionRemovalMode,
+		replacement?: string,
+	): Promise<number> {
+		const definition = this.getSharedPropertyDefinition(sharedPropertyId)
+		if (!definition.options?.some(option => option.value === optionValue)) throw new Error('missing-shared-option')
+		if (mode === 'replace' && (!replacement || replacement === optionValue ||
+			!definition.options.some(option => option.value === replacement))) throw new Error('invalid-shared-option-replacement')
+
+		const impacts = await this.getSharedOptionImpacts(sharedPropertyId, optionValue)
+		const originals = new Map<string, string>()
+		try {
+			if (mode !== 'preserve') {
+				for (const impact of impacts) {
+					originals.set(impact.file.path, await this.app.vault.read(impact.file))
+					const nextValue = resolveSharedOptionRemovalValue(impact.value, optionValue, mode, replacement)
+					await this.updateNoteField(impact.file, definition.storageKey, nextValue, impact.inlineFields)
+				}
+			}
+			await this.sharedProperties.update({
+				...definition,
+				options: definition.options.filter(option => option.value !== optionValue),
+			}, { allowOptionRemoval: true })
+		} catch (error) {
+			for (const impact of impacts.slice().reverse()) {
+				const content = originals.get(impact.file.path)
+				if (content === undefined) continue
+				try { await this.app.vault.modify(impact.file, content) } catch { /* best-effort rollback */ }
+			}
+			throw error
+		}
+		return impacts.length
+	}
+
+	async renameSharedOption(
+		sharedPropertyId: string,
+		oldValue: string,
+		newValue: string,
+		currentOptions?: SelectOption[],
+	): Promise<number> {
+		const definition = this.getSharedPropertyDefinition(sharedPropertyId)
+		const renamedOptions = renameSelectorOption(currentOptions ?? definition.options, oldValue, newValue)
+		const renamedValue = newValue.trim()
+		if (renamedValue === oldValue) return 0
+		const impacts = await this.getSharedOptionImpacts(sharedPropertyId, oldValue)
+		const originals = new Map<string, string>()
+		try {
+			for (const impact of impacts) {
+				originals.set(impact.file.path, await this.app.vault.read(impact.file))
+				await this.updateNoteField(
+					impact.file,
+					definition.storageKey,
+					resolveRenamedOptionValue(impact.value, oldValue, renamedValue),
+					impact.inlineFields,
+				)
+			}
+			await this.sharedProperties.update({ ...definition, options: renamedOptions }, { allowOptionRemoval: true })
+		} catch (error) {
+			for (const impact of impacts.slice().reverse()) {
+				const content = originals.get(impact.file.path)
+				if (content === undefined) continue
+				try { await this.app.vault.modify(impact.file, content) } catch { /* best-effort rollback */ }
+			}
+			throw error
+		}
+		return impacts.length
+	}
+
+	async addSharedOption(
+		sharedPropertyId: string,
+		option: SelectOption,
+		currentOptions?: SelectOption[],
+	): Promise<void> {
+		const definition = this.getSharedPropertyDefinition(sharedPropertyId)
+		await this.sharedProperties.update({
+			...definition,
+			options: appendSelectorOption(currentOptions ?? definition.options, option),
+		})
+	}
+
+	async addDatabaseOption(
+		dbFile: TFile,
+		config: DatabaseConfig,
+		columnId: string,
+		option: SelectOption,
+		currentOptions?: SelectOption[],
+	): Promise<DatabaseConfig> {
+		const column = config.schema.find(candidate => candidate.id === columnId)
+		if (!column || !['select', 'status', 'multiselect'].includes(column.type)) {
+			throw new Error('missing-selector-column')
+		}
+		const nextConfig: DatabaseConfig = {
+			...config,
+			schema: config.schema.map(candidate => candidate.id === columnId
+				? { ...candidate, options: appendSelectorOption(currentOptions ?? candidate.options, option) }
+				: candidate),
+		}
+		await this.writeConfig(dbFile, nextConfig)
+		return nextConfig
+	}
+
+	async renameDatabaseOption(
+		dbFile: TFile,
+		config: DatabaseConfig,
+		columnId: string,
+		oldValue: string,
+		newValue: string,
+		currentOptions?: SelectOption[],
+	): Promise<DatabaseConfig> {
+		const column = config.schema.find(candidate => candidate.id === columnId)
+		if (!column || !['select', 'status', 'multiselect'].includes(column.type)) {
+			throw new Error('missing-selector-column')
+		}
+		const renamedOptions = renameSelectorOption(currentOptions ?? column.options, oldValue, newValue)
+		const renamedValue = newValue.trim()
+		if (renamedValue === oldValue) return config
+		const includeSubfolders = config.views.some(view => !!view.includeSubfolders)
+		const impacts: SharedValueImpact[] = []
+		for (const file of this.getNotesInDatabase(dbFile, includeSubfolders)) {
+			const row = await this.getNoteData(file, [column])
+			const value = row[column.id]
+			if (sharedValueContainsOption(value, oldValue)) {
+				impacts.push({ file, value, inlineFields: row._inlineFields })
+			}
+		}
+		const nextConfig: DatabaseConfig = {
+			...config,
+			schema: config.schema.map(candidate => candidate.id === columnId
+				? { ...candidate, options: renamedOptions }
+				: candidate),
+		}
+		const originals = new Map<string, string>()
+		try {
+			for (const impact of impacts) {
+				originals.set(impact.file.path, await this.app.vault.read(impact.file))
+				await this.updateNoteField(
+					impact.file,
+					column.id,
+					resolveRenamedOptionValue(impact.value, oldValue, renamedValue),
+					impact.inlineFields,
+				)
+			}
+			await this.writeConfig(dbFile, nextConfig)
+		} catch (error) {
+			for (const impact of impacts.slice().reverse()) {
+				const content = originals.get(impact.file.path)
+				if (content === undefined) continue
+				try { await this.app.vault.modify(impact.file, content) } catch { /* best-effort rollback */ }
+			}
+			try { await this.writeConfig(dbFile, config) } catch { /* best-effort rollback */ }
+			throw error
+		}
+		return nextConfig
+	}
+
+	async getSharedPropertyDeletionImpact(sharedPropertyId: string): Promise<SharedPropertyDeletionImpact> {
+		const definition = this.getSharedPropertyDefinition(sharedPropertyId)
+		const databases = this.getDatabasesReferencingSharedProperty(sharedPropertyId)
+		const values = await this.getSharedValueImpacts(definition, value =>
+			Array.isArray(value) ? value.length > 0 : stringifyScalar(value).trim() !== ''
+		)
+		return { definition, databases, notesWithValues: values.length }
+	}
+
+	async deleteSharedProperty(sharedPropertyId: string): Promise<SharedPropertyDeletionImpact> {
+		const impact = await this.getSharedPropertyDeletionImpact(sharedPropertyId)
+		for (const { config } of impact.databases) {
+			if (config.schema.some(column => column.id === impact.definition.storageKey)) {
+				throw new Error('shared-property-local-conversion-collision')
+			}
+		}
+
+		const written: Array<{ file: TFile; config: DatabaseConfig }> = []
+		try {
+			for (const { file, config } of impact.databases) {
+				const nextConfig: DatabaseConfig = {
+					...config,
+					schema: [...config.schema, sharedDefinitionToLocalColumn(impact.definition)],
+					sharedPropertyIds: (config.sharedPropertyIds ?? []).filter(id => id !== sharedPropertyId),
+				}
+				await this.writeConfig(file, nextConfig)
+				written.push({ file, config })
+			}
+			await this.sharedProperties.remove(sharedPropertyId)
+		} catch (error) {
+			for (const item of written.reverse()) {
+				try { await this.writeConfig(item.file, item.config) } catch { /* best-effort rollback */ }
+			}
+			throw error
+		}
+		return impact
+	}
+
 	// ── Notas / linhas ─────────────────────────────────────────────────────
 
 	getNotesInDatabase(dbFile: TFile, includeSubfolders?: boolean): TFile[] {
@@ -113,7 +384,8 @@ export class DatabaseManager {
 			const files: TFile[] = []
 			const collect = (f: TFolder) => {
 				for (const child of f.children) {
-					if (child instanceof TFile && child.extension === 'md' && child.path !== dbFile.path) {
+					if (child instanceof TFile && child.extension === 'md' &&
+						child.path !== dbFile.path && child.path !== SHARED_PROPERTIES_REGISTRY_PATH) {
 						files.push(child)
 					} else if (child instanceof TFolder) {
 						collect(child)
@@ -128,7 +400,8 @@ export class DatabaseManager {
 			.filter((child): child is TFile =>
 				child instanceof TFile &&
 				child.extension === 'md' &&
-				child.path !== dbFile.path
+				child.path !== dbFile.path &&
+				child.path !== SHARED_PROPERTIES_REGISTRY_PATH
 			)
 			.sort((a, b) => a.basename.localeCompare(b.basename))
 	}
@@ -371,9 +644,10 @@ export class DatabaseManager {
 	/** createNote + automatic template resolution based on db config. Opens picker if askTemplateOnCreate is on. */
 	async createNoteWithTemplate(dbFile: TFile, initialFrontmatter?: Record<string, unknown>, view?: ViewConfig,): Promise<TFile> {
 		const config = this.readConfig(dbFile)
+		const effectiveSchema = this.resolveConfigSchema(config)
 				
 		const viewDefaults = view
-			? this.getDefaultFrontmatterFromFilterInView(view, config.schema)
+			? this.getDefaultFrontmatterFromFilterInView(view, effectiveSchema)
 			: {}
 
 		const mergeFrontmatter = {
@@ -647,7 +921,7 @@ export class DatabaseManager {
 				if (!refDbFile) { refDataCache.set(path, []); continue }
 				const refConfig = this.readConfig(refDbFile)
 				const refNotes = this.getNotesInDatabase(refDbFile)
-				const refRows = refNotes.map(f => this.getNoteDataSync(f, refConfig.schema))
+				const refRows = refNotes.map(f => this.getNoteDataSync(f, this.resolveConfigSchema(refConfig)))
 				refDataCache.set(path, refRows)
 			}
 		}
@@ -682,7 +956,7 @@ export class DatabaseManager {
 				if (!refDbFile) { refDataCache.set(path, []); continue }
 				const refConfig = this.readConfig(refDbFile)
 				const refNotes = this.getNotesInDatabase(refDbFile)
-				refDataCache.set(path, refNotes.map(f => this.getNoteDataSync(f, refConfig.schema)))
+				refDataCache.set(path, refNotes.map(f => this.getNoteDataSync(f, this.resolveConfigSchema(refConfig))))
 			}
 		}
 
@@ -773,6 +1047,7 @@ export class DatabaseManager {
 			'    hiddenColumns: []',
 			'    columnWidths: {}',
 			'virtualPropertiesVersion: 1',
+			'sharedPropertyIds: []',
 			'---',
 			'',
 			'> [!tip] Notion Bases',

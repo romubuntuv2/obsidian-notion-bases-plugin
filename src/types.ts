@@ -49,6 +49,7 @@ export interface ColumnSchema {
 	visible: boolean
 	propertyScope?: PropertyScope
 	virtualSource?: VirtualPropertySource
+	sharedPropertyId?: string
 	width?: number
 	options?: SelectOption[]  // select / multiselect
 	formula?: string          // formula
@@ -169,6 +170,7 @@ export interface DatabaseConfig {
 	schema: ColumnSchema[]
 	views: ViewConfig[]
 	virtualPropertiesVersion?: number
+	sharedPropertyIds?: string[]
 	templatePath?: string
 	templateFolder?: string            // restricts the template picker to this folder (issue #42)
 	askTemplateOnCreate?: boolean
@@ -189,6 +191,24 @@ export const DEFAULT_DATABASE_CONFIG: DatabaseConfig = {
 	schema: [],
 	views: [DEFAULT_VIEW],
 	virtualPropertiesVersion: 1,
+	sharedPropertyIds: [],
+}
+
+// ── Shared-property registry ───────────────────────────────────────────────
+
+export interface SharedPropertyDefinition {
+	id: string
+	storageKey: string
+	name: string
+	type: ColumnType
+	options?: SelectOption[]
+	numberFormat?: NumberFormat
+	dateFormat?: string
+}
+
+export interface SharedPropertyRegistry {
+	version: number
+	properties: SharedPropertyDefinition[]
 }
 
 // ── Inline field metadata ───────────────────────────────────────────────────

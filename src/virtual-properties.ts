@@ -134,8 +134,10 @@ export interface PropertyCapabilities {
 export interface EffectiveSchema {
 	schema: ColumnSchema[]
 	localSchema: ColumnSchema[]
+	sharedSchema: ColumnSchema[]
 	virtualSchema: ColumnSchema[]
 	reservedIdCollisions: string[]
+	sharedStorageKeyCollisions: string[]
 }
 
 export function getVirtualPropertyDefinitions(): ColumnSchema[] {
@@ -226,23 +228,37 @@ export function getPropertyCapabilities(column: ColumnSchema): PropertyCapabilit
 	return { readable: true, editable: true, persistedInFrontmatter: true }
 }
 
-export function resolveEffectiveSchema(localSchema: ColumnSchema[]): EffectiveSchema {
+export function resolveEffectiveSchema(localSchema: ColumnSchema[], attachedSharedSchema: ColumnSchema[] = []): EffectiveSchema {
 	const local = localSchema.map(column => ({
 		...column,
 		propertyScope: column.propertyScope ?? 'database',
 	}))
 	const localIds = new Set(local.map(column => column.id))
+	const shared = attachedSharedSchema.map(column => ({
+		...column,
+		propertyScope: 'shared' as const,
+	}))
 	const virtualSchema = createVirtualPropertyDefinitions()
 	const virtualIds = new Set(virtualSchema.map(column => column.id))
+	const sharedStorageKeyCollisions = shared
+		.filter((column, index) => localIds.has(column.id) || shared.findIndex(candidate => candidate.id === column.id) !== index)
+		.map(column => column.id)
 	const reservedIdCollisions = virtualSchema
-		.filter(column => localIds.has(column.id))
+		.filter(column => localIds.has(column.id) || shared.some(sharedColumn => sharedColumn.id === column.id))
 		.map(column => column.id)
 	const availableLocalColumns = local.filter(column => !virtualIds.has(column.id))
+	const availableSharedColumns = shared.filter((column, index) =>
+		!virtualIds.has(column.id) &&
+		!localIds.has(column.id) &&
+		shared.findIndex(candidate => candidate.id === column.id) === index
+	)
 	return {
-		schema: [...availableLocalColumns, ...virtualSchema],
+		schema: [...availableLocalColumns, ...availableSharedColumns, ...virtualSchema],
 		localSchema: local,
+		sharedSchema: shared,
 		virtualSchema,
 		reservedIdCollisions,
+		sharedStorageKeyCollisions,
 	}
 }
 

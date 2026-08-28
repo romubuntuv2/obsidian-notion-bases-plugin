@@ -5,10 +5,10 @@
 
 ## Current focus
 
-The agreed first version of virtual properties is complete. The next property-scope
-milestone is the separate shared-property registry; it is designed below but not yet
-implemented. The next planned Calendar feature remains a per-view setting for choosing
-Sunday or Monday as the first day of the week.
+The agreed first version of virtual properties is complete. Shared properties have now
+reached their first usable phase: vault registry, manual attachment, effective-schema
+integration, synchronized definitions/options, and safe collision handling. The next
+shared-property milestone is the impact-aware option/property deletion workflow.
 
 ## Supported platform
 
@@ -66,6 +66,8 @@ EditableFields/
 ├── EditableCardProperties.tsx
 ├── EditableTitle.tsx
 ├── EditableSelector.tsx
+├── RenamableSelectorOption.tsx
+├── SelectorOptionCreateInput.tsx
 └── EditableDate.tsx
 ```
 
@@ -76,11 +78,13 @@ the existing read-only rendering for other populated property types.
 `EditableSelector` displays configured options, supports clearing values, uses
 single-choice behavior for `select`/`status`, and toggle behavior for `multiselect`.
 It persists through `DatabaseManager.updateNoteField`, including inline-field metadata.
-Calendar monthly cards and Board cards share this implementation. On Board cards, the
-grouping property remains excluded because it is edited by moving the card between
-columns.
-Creating, renaming, recoloring, or deleting schema options is intentionally outside this
-first Calendar implementation.
+Calendar monthly, weekly, no-date, and Board cards share this implementation. A normal
+click selects an option; a double-click opens the shared inline rename editor. Renaming
+migrates scalar and multiselect note values and updates either the current database-local
+schema or the canonical shared-property registry. The same creation input as the Table is
+shown at the top of every card menu. A newly created select/status option is selected
+immediately; a multiselect option is appended to the current value. On Board cards, the
+grouping property remains excluded because it is edited by moving the card between columns.
 
 `EditableDate` is used on Board cards and every Calendar card variant. It hides the property name, displays a
 compact French label such as `Lun 12 Janv.`, and opens the native date picker from a
@@ -110,7 +114,7 @@ The target property model has three distinct scopes:
    and presentation are configured locally in that database's `_database.md`. Adding or
    removing a select option affects only that database.
 2. **Virtual properties** project native Obsidian/file information without duplicating it
-   into note frontmatter. The initial catalog should include title, parent folder, path,
+   into note frontmatter. The catalog includes title, parent folder, path,
    creation date, and last-modified date. Each virtual source defines its own capability:
    only title is editable and maps to a real file rename. Parent folder, path, creation
    date, and last-modified date are read-only. Moving a note remains a separate Obsidian
@@ -148,8 +152,8 @@ Current implementation status:
   for identity, drag/drop, ordering, selection, and file operations.
 - [x] `ColumnSchema` now declares `propertyScope` and `virtualSource`, with stable sources
   for title, parent folder, path, creation time, and modification time.
-- [x] `resolveEffectiveSchema()` keeps local definitions separate and injects canonical
-  virtual definitions without writing them to `_database.md`.
+- [x] `resolveEffectiveSchema()` composes local definitions, attached shared definitions,
+  and canonical virtual definitions without copying shared/virtual schemas into a base.
 - [x] Every row now carries `_title`, `_parentFolder`, `_path`, `_ctime`, and `_mtime`
   directly from `TFile` metadata.
 - [x] Capability metadata marks title as the sole editable virtual source; both Table and
@@ -165,8 +169,8 @@ Current implementation status:
   time (`🕓`), and modification time (`🖊`).
 - [x] The effective schema now feeds view field menus, restored filters, sorts, formulas,
   charts, conditional formatting, and read-only card/list/table rendering.
-- [x] Calendar and Timeline accept only editable local date properties as mutable layout
-  fields; canonical and legacy system timestamps are excluded from drag/resize writes.
+- [x] Calendar and Timeline accept editable database/shared date properties as mutable
+  layout fields; canonical and legacy system timestamps remain excluded from writes.
 - [x] Legacy `_folder` view references and local `systemField` timestamp definitions are
   migrated once to canonical virtual IDs. Filters, sorts, pills, order, widths,
   aggregations, conditional formatting, pinned columns, formulas, references, and chart
@@ -176,10 +180,39 @@ Current implementation status:
 - [x] Dedicated tests cover the catalog, effective schema composition, reserved-ID
   collisions, canonical row hydration, title-only mutation, per-view selection,
   filter/sort/formula consumption, complete legacy migration, and migration idempotence.
-- [ ] No shared-property registry, stable shared-property reference, or propagation path
-  exists yet.
+- [x] `register_shared_propertiers.md` is created lazily at the vault root and stores
+  versioned canonical definitions with stable UUIDs and immutable note storage keys.
+- [x] Databases persist only `sharedPropertyIds`; attachment is explicit and never inherited.
+- [x] Shared definitions are editable from Database settings and option additions,
+  recolors, reorderings, and name changes propagate to every attached database.
+- [x] The Table `+` menu can create a new shared `select` or attach an existing shared
+  `select`/`status`/`multiselect` without opening Database settings.
+- [x] Shared selector options can be added and recolored directly from normal Table cells;
+  those edits update the canonical registry instead of copying the field locally.
+- [x] Shared column headers expose direct rename, hide, and non-destructive detach actions.
+- [x] Table, Board, Calendar, List, Gallery, Timeline, Charts, Quick Add, filters, sorts,
+  formulas, lookups, rollups, conditional formatting, and editable fields consume the
+  effective shared schema where applicable.
+- [x] Detaching a property removes only the database reference and leaves note values intact.
 - [x] Collision behavior is defined: attaching or creating a shared property is blocked
   when the database already has a local property with the same storage key.
+- [x] Removing a shared option from a Table cell first scans the notes belonging to every
+  referencing database, then requires an explicit replace, clear, or historical-value choice.
+- [x] Shared-property deletion is available from its Table header and Database settings.
+  It clones the final definition locally into every referencing database before removing
+  the canonical registry entry, while leaving note values and view column IDs intact.
+- [x] Both destructive workflows use best-effort rollback: note contents are restored if
+  an option migration fails, and previously written database configs are restored if the
+  global property conversion fails.
+- [x] Existing `select`, `status`, and `multiselect` options can be renamed by double-click
+  from Table cells and Board/Calendar `EditableSelector` menus. Local renames migrate the
+  current database’s notes; shared renames migrate every referencing database and update
+  the canonical registry. Colors/order are preserved and duplicate or empty names are blocked.
+- [x] New options can be created from the same input in Table, Board, and every Calendar
+  card selector. Creation updates the local schema or shared registry according to scope,
+  then immediately selects the value on the originating card.
+- [ ] Add a standalone vault-wide registry-management screen if managing unattached
+  definitions without first attaching them to a database becomes necessary.
 
 Confirmed design decisions:
 
@@ -202,8 +235,14 @@ dialogs remain internal implementation details.
 Virtual-properties stage: **complete for the agreed first version**. Stable sources,
 canonical row values, shared title editing, per-view opt-in visibility, effective-schema
 consumers, read-only mutation guards, global Fields-menu preferences, and the versioned
-legacy migration are implemented without frontmatter duplication. Shared properties are
-a separate future feature.
+legacy migration are implemented without frontmatter duplication.
+
+Shared-properties stage: **complete for the agreed usable scope**. Registry persistence,
+stable identity, manual per-database references, propagation, cross-view editing, safe
+detach, blocking collisions, impact-aware option deletion, and lossless global-property
+deletion are implemented. Inline option renaming is also complete across Table, Board,
+and Calendar for local and shared selectors. Only a standalone vault-wide registry screen
+remains optional follow-up work.
 
 ### Database navigation
 
@@ -304,13 +343,14 @@ The planned configurable week start should be stored on `ViewConfig`, for exampl
 
 ## Verification status
 
-On 2026-08-27 after the Calendar and Board splits:
+On 2026-08-28 after the Shared Properties deletion workflows:
 
 - `npm run build`: passes.
-- `npm test`: all 9 test files and 196 tests pass.
-- targeted ESLint for Calendar, Board, and `EditableFields`: passes.
-- `EditableTitle` now uses relative imports, a popout-safe `window.requestAnimationFrame`,
-  and a void-returning blur handler.
+- `npm test`: all 10 test files and 218 tests pass.
+- `npm run lint`: 0 errors; 5 unrelated pre-existing warnings remain.
+- Shared-property tests cover registry persistence/sanitization, reference resolution,
+  collisions, attach/detach, effective-schema composition, cross-database propagation,
+  scalar/multiselect option migrations, historical values, and local-definition cloning.
 
 ## Engineering preference
 
@@ -318,6 +358,45 @@ This fork is for personal use. Prefer simple, localized changes, explicit compon
 contracts, and preservation of known-working behavior over generalized abstraction.
 
 ## Changelog
+
+### 2026-08-28
+
+- Added the vault-root `register_shared_propertiers.md` registry with a dedicated marker,
+  schema version, sanitized canonical definitions, and guarded persistence.
+- Added stable shared UUIDs, immutable note storage keys, `sharedPropertyIds` database
+  references, and `propertyScope: 'shared'` effective columns.
+- Added creation, editing, manual attachment, and non-destructive detachment in Database
+  settings, with no parent/child inheritance.
+- Composed database-local, attached shared, and virtual properties in the effective schema.
+- Integrated shared selectors/dates and other supported fields across Table, Board,
+  Calendar, List, Gallery, Timeline, Charts, Quick Add, filters, sorts, formulas, lookups,
+  rollups, and conditional formatting where compatible.
+- Blocked local/shared key collisions before mutation and excluded the registry Markdown
+  file from database rows.
+- Locked shared storage keys/types after creation and blocked option removal/rename until
+  the impact-aware migration workflow is implemented.
+- Added seven Shared Properties tests, bringing the suite to 211 passing tests.
+- Added a direct Table workflow for creating/attaching shared selectors from the `+`
+  button and managing their name, visibility, and attachment from the column header.
+- Routed selector option creation and color changes from Table cells to the canonical
+  registry, fixing the remaining attempt to persist effective shared columns locally.
+- Kept delete buttons hidden for shared options until the impact-aware deletion workflow
+  can preserve or explicitly migrate every affected note value.
+- Added the impact-aware shared-option deletion modal with replace, clear, and preserve-as-
+  historical choices; the scan is restricted to notes of databases that reference the field.
+- Added full shared-property deletion from Table headers and Database settings. Every
+  reference is converted to an independent local definition before the registry entry is
+  removed, preserving stored values and existing view references.
+- Added rollback guards for both destructive workflows and four migration test cases,
+  bringing the suite to 215 passing tests.
+- Added one reusable double-click option editor to Table and every Board/Calendar card
+  selector for local and shared `select`, `status`, and `multiselect` properties.
+- Added lossless option-rename migrations with preserved color/order, multiselect
+  deduplication, duplicate/empty-name guards, and rollback protection; the suite now has
+  217 passing tests.
+- Reused `SelectorOptionCreateInput` across Table, Board, and Calendar menus and added
+  local/shared option creation directly from cards with immediate value selection. The
+  suite now has 218 passing tests.
 
 ### 2026-08-27
 

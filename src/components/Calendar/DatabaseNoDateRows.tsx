@@ -6,6 +6,7 @@ import { t } from '../../i18n'
 import EditableTitle from '../EditableFields/EditableTitle'
 import EditableCardProperties from '../EditableFields/EditableCardProperties'
 import { CardContextMenuHandler, CardDragHandler } from './calendar-types'
+import { CreateSelectorOptionHandler, RenameSelectorOptionHandler } from '../../hooks/useSelectorOptionRename'
 
 interface DatabaseNoDateRowsProps {
 	rows: NoteRow[]
@@ -14,10 +15,12 @@ interface DatabaseNoDateRowsProps {
 	onOpenFile: (file: TFile) => void
 	onCardDragStart: CardDragHandler
 	onCardContextMenu: CardContextMenuHandler
+	onRenameOption: RenameSelectorOptionHandler
+	onCreateOption: CreateSelectorOptionHandler
 }
 
 export function DatabaseNoDateRows({ rows, manager, visibleColumns,
-	onOpenFile, onCardDragStart, onCardContextMenu }: DatabaseNoDateRowsProps) {
+	onOpenFile, onCardDragStart, onCardContextMenu, onRenameOption, onCreateOption }: DatabaseNoDateRowsProps) {
 	return <div className="nb-cal-no-date">
 		<div className="nb-cal-no-date-title">{t('calendar_no_date_section')} ({rows.length})</div>
 		<div className="nb-cal-no-date-list">
@@ -26,7 +29,8 @@ export function DatabaseNoDateRows({ rows, manager, visibleColumns,
 					onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onCardContextMenu(event, row) }}
 					onClick={event => event.stopPropagation()}>
 					<EditableTitle title={row._title} file={row._file} manager={manager} onOpen={onOpenFile} className="nb-cal-card-title" />
-					<EditableCardProperties row={row} columns={visibleColumns} manager={manager} />
+					<EditableCardProperties row={row} columns={visibleColumns} manager={manager}
+						onRenameOption={onRenameOption} onCreateOption={onCreateOption} />
 				</div>)}
 		</div>
 	</div>

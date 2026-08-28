@@ -172,7 +172,7 @@ const GalleryCard = React.memo(function GalleryCard({
 
 export function DatabaseGallery({ dbFile, manager, externalView, onViewChange }: DatabaseGalleryProps) {
 	const app = useApp()
-	const { rows, config, effectiveSchema, loading, activeFilters, setActiveFilters } = useDatabaseRows({
+	const { rows, effectiveSchema, loading, activeFilters, setActiveFilters } = useDatabaseRows({
 		app, dbFile, manager, includeSubfolders: externalView.includeSubfolders, externalView,
 	})
 	const [activeView, setActiveView] = useState<ViewConfig>(externalView)
@@ -271,8 +271,8 @@ export function DatabaseGallery({ dbFile, manager, externalView, onViewChange }:
 	const fieldMenuColumns = getFieldMenuColumns(effectiveSchema)
 
 	const coverField = useMemo(
-		() => config.schema.find(c => c.id === activeView.galleryCoverField) ?? null,
-		[config.schema, activeView.galleryCoverField]
+		() => effectiveSchema.find(c => c.id === activeView.galleryCoverField) ?? null,
+		[effectiveSchema, activeView.galleryCoverField]
 	)
 
 	const cardSize = activeView.galleryCardSize ?? 'medium'
@@ -354,7 +354,7 @@ export function DatabaseGallery({ dbFile, manager, externalView, onViewChange }:
 					<span className="nb-menu-item-icon">—</span>
 					<span>{t('no_cover')}</span>
 				</button>
-				{config.schema.filter(c => c.type === 'text' || c.type === 'title' || c.type === 'image').map(col => (
+				{effectiveSchema.filter(c => c.type === 'text' || c.type === 'title' || c.type === 'image').map(col => (
 					<button
 						key={col.id}
 						className={`nb-menu-item${activeView.galleryCoverField === col.id ? ' nb-menu-item--active' : ''}`}
@@ -460,7 +460,7 @@ export function DatabaseGallery({ dbFile, manager, externalView, onViewChange }:
 								<span className="nb-menu-item-icon">—</span>
 								<span>{t('no_cover')}</span>
 							</button>
-							{config.schema.filter(c => c.type === 'text' || c.type === 'title' || c.type === 'image').map(col => (
+							{effectiveSchema.filter(c => c.type === 'text' || c.type === 'title' || c.type === 'image').map(col => (
 								<button
 									key={col.id}
 									className={`nb-menu-item${activeView.galleryCoverField === col.id ? ' nb-menu-item--active' : ''}`}

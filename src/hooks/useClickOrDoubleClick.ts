@@ -22,7 +22,7 @@ export function useClickOrDoubleClick<T extends HTMLElement = HTMLDivElement>({
     useEffect(() => {
         return () => {
             if (timeoutRef.current !== null) {
-                clearTimeout(timeoutRef.current);
+                window.clearTimeout(timeoutRef.current);
             }
         };
     }, []);
@@ -45,7 +45,7 @@ export function useClickOrDoubleClick<T extends HTMLElement = HTMLDivElement>({
         event.stopPropagation();
 
         if (timeoutRef.current !== null) {
-            clearTimeout(timeoutRef.current);
+            window.clearTimeout(timeoutRef.current);
             timeoutRef.current = null;
         }
 

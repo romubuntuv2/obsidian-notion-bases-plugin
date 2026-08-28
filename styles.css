@@ -289,6 +289,18 @@
 	border-right: none;
 }
 
+.nb-th-add-col .nb-view-tab-add {
+	width: 100%;
+	height: 100%;
+	margin-left: 0;
+}
+
+.nb-th-add-col .nb-view-add-menu {
+	left: auto;
+	right: 0;
+	min-width: 240px;
+}
+
 .nb-th-select {
 	width: 40px;
 	text-align: center;
@@ -1783,6 +1795,22 @@
 
 .nb-select-dropdown .nb-select-option--active {
 	background: var(--background-modifier-active-hover);
+}
+
+.nb-selector-option-renaming {
+	display: flex;
+	align-items: center;
+	min-width: 0;
+	padding: 3px 6px;
+}
+
+.nb-selector-option-rename-input {
+	width: 100%;
+	min-width: 90px;
+	height: 24px;
+	margin: 0;
+	padding: 2px 6px;
+	font: inherit;
 }
 
 .nb-select-clear {

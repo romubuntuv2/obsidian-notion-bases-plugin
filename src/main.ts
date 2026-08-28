@@ -186,7 +186,7 @@ export default class NotionBasesPlugin extends Plugin {
 			this.settings.showDatabasePathInPicker,
 			file => {
 			const config = this.manager.readConfig(file)
-			new QuickAddModal(this.app, this.manager, file, config.schema).open()
+			new QuickAddModal(this.app, this.manager, file, this.manager.resolveConfigSchema(config)).open()
 		}).open()
 	}
 

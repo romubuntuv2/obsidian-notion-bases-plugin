@@ -8,6 +8,7 @@ import { evaluateFormulas } from '../formula-engine'
 import { ActiveFilter, getColumnIconStatic } from '../components/filter-utils'
 import { t } from '../i18n'
 import { migrateLegacyVirtualProperties, resolveEffectiveSchema } from '../virtual-properties'
+import { resolveAttachedSharedProperties } from '../shared-properties'
 
 const CHUNK_SIZE = 200
 const CHUNK_THRESHOLD = 100
@@ -113,12 +114,14 @@ export function useDatabaseRows(options: UseDatabaseRowsOptions): UseDatabaseRow
 		const cfg = migration.config
 		if (migration.migrated) await manager.writeConfig(dbFile, cfg)
 		const notes = manager.getNotesInDatabase(dbFile, includeSubfolders)
+		const attachedShared = resolveAttachedSharedProperties(manager.sharedProperties.read(), cfg.sharedPropertyIds)
 
 		if (cfg.schema.length === 0 && notes.length > 0) {
-			cfg.schema = await manager.inferSchema(notes)
+			const sharedStorageKeys = new Set(attachedShared.columns.map(column => column.id))
+			cfg.schema = (await manager.inferSchema(notes)).filter(column => !sharedStorageKeys.has(column.id))
 			await manager.writeConfig(dbFile, cfg)
 		}
-		const resolvedSchema = resolveEffectiveSchema(cfg.schema).schema
+		const resolvedSchema = resolveEffectiveSchema(cfg.schema, attachedShared.columns).schema
 
 		const rawRows = await processRowsInChunks(notes, resolvedSchema, manager, loadVersion, version)
 		if (!rawRows) return
@@ -139,7 +142,7 @@ export function useDatabaseRows(options: UseDatabaseRowsOptions): UseDatabaseRow
 			setActiveFilters(restoreFilterPills(pills, resolvedSchema))
 		}
 
-		setConfig({ schema: cfg.schema, views: cfg.views })
+		setConfig(cfg)
 		setEffectiveSchema(resolvedSchema)
 		setRows(noteRows)
 		onLoaded?.(cfg, noteRows)
