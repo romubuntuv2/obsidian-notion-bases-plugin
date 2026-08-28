@@ -27,6 +27,22 @@ export interface AttachedSharedProperties {
 	missingReferenceIds: string[]
 }
 
+export interface MissingSharedPropertyReference {
+	databasePath: string
+	sharedPropertyId: string
+}
+
+export function findMissingSharedPropertyReferences(
+	registry: SharedPropertyRegistry,
+	databases: Array<{ path: string; sharedPropertyIds?: string[] }>,
+): MissingSharedPropertyReference[] {
+	const knownIds = new Set(registry.properties.map(property => property.id))
+	return databases.flatMap(database =>
+		Array.from(new Set(database.sharedPropertyIds ?? []))
+			.filter(sharedPropertyId => !knownIds.has(sharedPropertyId))
+			.map(sharedPropertyId => ({ databasePath: database.path, sharedPropertyId })))
+}
+
 function cloneOptions(options: SelectOption[] | undefined): SelectOption[] | undefined {
 	return options?.map(option => ({ ...option }))
 }
@@ -184,6 +200,15 @@ export function appendSelectorOption(
 	if (!value) throw new Error('invalid-selector-option-name')
 	if (options?.some(candidate => candidate.value === value)) throw new Error('duplicate-selector-option')
 	return [...(options?.map(candidate => ({ ...candidate })) ?? []), { ...option, value }]
+}
+
+export function recolorSelectorOption(
+	options: SelectOption[] | undefined,
+	optionValue: string,
+	color: string,
+): SelectOption[] {
+	if (!options?.some(option => option.value === optionValue)) throw new Error('missing-selector-option')
+	return options.map(option => option.value === optionValue ? { ...option, color } : { ...option })
 }
 
 export function renameSelectorOption(

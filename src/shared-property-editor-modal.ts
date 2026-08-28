@@ -27,6 +27,7 @@ interface SharedPropertyEditorModalOptions {
 	initialType?: ColumnType
 	fixedType?: boolean
 	showOptions?: boolean
+	allowOptionRemoval?: boolean
 	onSave: (definition: Omit<SharedPropertyDefinition, 'id'> & { id?: string }) => Promise<void>
 }
 
@@ -113,7 +114,8 @@ export class SharedPropertyEditorModal extends Modal {
 		}
 		const existing = this.editorOptions.definition
 		const nextOptions = SELECTOR_TYPES.has(this.type) ? parseOptions(this.optionsText, existing?.options) : undefined
-		if (existing?.options?.some(option => !nextOptions?.some(candidate => candidate.value === option.value))) {
+		if (!this.editorOptions.allowOptionRemoval &&
+			existing?.options?.some(option => !nextOptions?.some(candidate => candidate.value === option.value))) {
 			new Notice(t('shared_property_option_removal_blocked'))
 			return
 		}

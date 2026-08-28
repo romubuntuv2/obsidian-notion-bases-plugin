@@ -5,10 +5,10 @@
 
 ## Current focus
 
-The agreed first version of virtual properties is complete. Shared properties have now
-reached their first usable phase: vault registry, manual attachment, effective-schema
-integration, synchronized definitions/options, and safe collision handling. The next
-shared-property milestone is the impact-aware option/property deletion workflow.
+The agreed first version of virtual properties is complete. Shared properties now cover
+the complete agreed usable scope: vault registry, manual attachment, effective-schema
+integration, synchronized definition/option editing, safe destructive migrations, and a
+vault-wide registry manager available from the plugin settings.
 
 ## Supported platform
 
@@ -68,6 +68,7 @@ EditableFields/
 ├── EditableSelector.tsx
 ├── RenamableSelectorOption.tsx
 ├── SelectorOptionCreateInput.tsx
+├── SelectorOptionColorPicker.tsx
 └── EditableDate.tsx
 ```
 
@@ -83,8 +84,11 @@ click selects an option; a double-click opens the shared inline rename editor. R
 migrates scalar and multiselect note values and updates either the current database-local
 schema or the canonical shared-property registry. The same creation input as the Table is
 shown at the top of every card menu. A newly created select/status option is selected
-immediately; a multiselect option is appended to the current value. On Board cards, the
-grouping property remains excluded because it is edited by moving the card between columns.
+immediately; a multiselect option is appended to the current value. Card menus also expose
+the shared color picker and option deletion. Shared deletion opens the impact-aware modal;
+local deletion clears that option from every affected note in the current database with
+rollback protection. On Board cards, the grouping property remains excluded because it is
+edited by moving the card between columns.
 
 `EditableDate` is used on Board cards and every Calendar card variant. It hides the property name, displays a
 compact French label such as `Lun 12 Janv.`, and opens the native date picker from a
@@ -211,8 +215,12 @@ Current implementation status:
 - [x] New options can be created from the same input in Table, Board, and every Calendar
   card selector. Creation updates the local schema or shared registry according to scope,
   then immediately selects the value on the originating card.
-- [ ] Add a standalone vault-wide registry-management screen if managing unattached
-  definitions without first attaching them to a database becomes necessary.
+- [x] Board and Calendar selector menus expose the same color palette and delete control
+  as Table. Shared deletion reuses the replace/clear/historical migration modal; local
+  deletion clears affected scalar/multiselect values throughout the current database.
+- [x] The plugin settings expose a standalone vault-wide registry manager. It can create
+  and edit unattached definitions, audit usage, open referencing databases, invoke the
+  safe global-delete workflow, and detect or clean stale database references.
 
 Confirmed design decisions:
 
@@ -239,10 +247,10 @@ legacy migration are implemented without frontmatter duplication.
 
 Shared-properties stage: **complete for the agreed usable scope**. Registry persistence,
 stable identity, manual per-database references, propagation, cross-view editing, safe
-detach, blocking collisions, impact-aware option deletion, and lossless global-property
-deletion are implemented. Inline option renaming is also complete across Table, Board,
-and Calendar for local and shared selectors. Only a standalone vault-wide registry screen
-remains optional follow-up work.
+detach, blocking collisions, impact-aware option deletion, lossless global-property
+deletion, and standalone vault-wide registry administration are implemented. Inline
+option creation, recoloring, renaming, and deletion are consistent across Table, Board,
+and Calendar for local and shared selectors.
 
 ### Database navigation
 
@@ -343,14 +351,15 @@ The planned configurable week start should be stored on `ViewConfig`, for exampl
 
 ## Verification status
 
-On 2026-08-28 after the Shared Properties deletion workflows:
+On 2026-08-28 after the vault-wide Shared Properties manager:
 
 - `npm run build`: passes.
-- `npm test`: all 10 test files and 218 tests pass.
+- `npm test`: all 10 test files and 220 tests pass.
 - `npm run lint`: 0 errors; 5 unrelated pre-existing warnings remain.
 - Shared-property tests cover registry persistence/sanitization, reference resolution,
   collisions, attach/detach, effective-schema composition, cross-database propagation,
-  scalar/multiselect option migrations, historical values, and local-definition cloning.
+  scalar/multiselect option migrations, historical values, local-definition cloning, and
+  vault-wide missing-reference audits.
 
 ## Engineering preference
 
@@ -397,6 +406,13 @@ contracts, and preservation of known-working behavior over generalized abstracti
 - Reused `SelectorOptionCreateInput` across Table, Board, and Calendar menus and added
   local/shared option creation directly from cards with immediate value selection. The
   suite now has 218 passing tests.
+- Added `SelectorOptionColorPicker` and delete actions to every Board/Calendar selector.
+  Colors persist locally or canonically by scope; shared deletion reuses the impact modal,
+  while local deletion safely clears all affected note values. The suite now has 219 tests.
+- Added a standalone Shared Properties registry manager to plugin settings. It lists every
+  definition with its options, referencing databases, and populated-note count; supports
+  create/edit/delete and database navigation; and audits/removes stale references. Added
+  a focused missing-reference audit test, bringing the suite to 220 passing tests.
 
 ### 2026-08-27
 

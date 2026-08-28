@@ -4,7 +4,9 @@ import { ColumnSchema, NoteRow } from '../../types'
 import { DatabaseManager } from '../../database-manager'
 import EditableTitle from '../EditableFields/EditableTitle'
 import EditableCardProperties from '../EditableFields/EditableCardProperties'
-import { CreateSelectorOptionHandler, RenameSelectorOptionHandler } from '../../hooks/useSelectorOptionRename'
+import {
+	ColorSelectorOptionHandler, CreateSelectorOptionHandler, DeleteSelectorOptionHandler, RenameSelectorOptionHandler,
+} from '../../hooks/useSelectorOptionRename'
 
 interface BoardCardProps {
 	row: NoteRow
@@ -15,18 +17,21 @@ interface BoardCardProps {
 	onContextMenu: (event: React.MouseEvent, file: TFile) => void
 	onRenameOption: RenameSelectorOptionHandler
 	onCreateOption: CreateSelectorOptionHandler
+	onColorOption: ColorSelectorOptionHandler
+	onDeleteOption: DeleteSelectorOptionHandler
 	cardStyle?: React.CSSProperties
 }
 
 export const BoardCard = React.memo(function BoardCard({ row, visibleColumns,
 	manager, onOpen, onDragStart,
-	onContextMenu, onRenameOption, onCreateOption, cardStyle }: BoardCardProps) {
+	onContextMenu, onRenameOption, onCreateOption, onColorOption, onDeleteOption, cardStyle }: BoardCardProps) {
 	return <div className="nb-board-card" style={cardStyle} draggable
 		onDragStart={event => { event.stopPropagation(); onDragStart(event, row._file.path) }}
 		onContextMenu={event => { event.preventDefault(); onContextMenu(event, row._file) }}>
 		<EditableTitle title={row._title} file={row._file} onOpen={onOpen}
 			manager={manager} className="nb-board-card-title" />
 		<EditableCardProperties row={row} columns={visibleColumns} manager={manager}
-			onRenameOption={onRenameOption} onCreateOption={onCreateOption} />
+			onRenameOption={onRenameOption} onCreateOption={onCreateOption}
+			onColorOption={onColorOption} onDeleteOption={onDeleteOption} />
 	</div>
 })

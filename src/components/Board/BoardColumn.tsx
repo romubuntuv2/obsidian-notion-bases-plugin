@@ -7,7 +7,9 @@ import { t } from '../../i18n'
 import { BoardCard } from './BoardCard'
 import { LazyBoardCard } from './LazyBoardCard'
 import { BoardColumnData, DRAG_TYPE_CARD, DRAG_TYPE_COLUMN, VIRTUALIZATION_THRESHOLD } from './board-types'
-import { CreateSelectorOptionHandler, RenameSelectorOptionHandler } from '../../hooks/useSelectorOptionRename'
+import {
+	ColorSelectorOptionHandler, CreateSelectorOptionHandler, DeleteSelectorOptionHandler, RenameSelectorOptionHandler,
+} from '../../hooks/useSelectorOptionRename'
 
 interface BoardColumnProps {
 	column: BoardColumnData
@@ -32,13 +34,15 @@ interface BoardColumnProps {
 	onCardContextMenu: (event: React.MouseEvent, file: TFile) => void
 	onRenameOption: RenameSelectorOptionHandler
 	onCreateOption: CreateSelectorOptionHandler
+	onColorOption: ColorSelectorOptionHandler
+	onDeleteOption: DeleteSelectorOptionHandler
 }
 
 export function BoardColumn({ column, cardDragOver, columnDragOver, view, schema,
 	visibleColumns, manager, editingLimit, expanded,
 	onSetEditingLimit, onSetExpanded, onSetCardDragOver, onSetColumnDragOver,
 	onSaveView, onMoveCard, onMoveColumn, onAddCard, onOpenFile, onCardDragStart,
-	onCardContextMenu, onRenameOption, onCreateOption }: BoardColumnProps) {
+	onCardContextMenu, onRenameOption, onCreateOption, onColorOption, onDeleteOption }: BoardColumnProps) {
 	const key = column.value || '__no_value__'
 	const limit = view.boardColumnLimits?.[column.value]
 	const overLimit = limit !== undefined && limit > 0 && column.rows.length >= limit
@@ -107,6 +111,7 @@ export function BoardColumn({ column, cardDragOver, columnDragOver, view, schema
 					manager={manager} onOpen={onOpenFile}
 					onDragStart={onCardDragStart} onContextMenu={onCardContextMenu}
 					onRenameOption={onRenameOption} onCreateOption={onCreateOption}
+					onColorOption={onColorOption} onDeleteOption={onDeleteOption}
 					cardStyle={view.conditionalFormats?.length ? getCardConditionalStyle(row, view.conditionalFormats, schema) : undefined} />
 				return visibleRows.length >= VIRTUALIZATION_THRESHOLD
 					? <LazyBoardCard key={row._file.path}>{card}</LazyBoardCard>

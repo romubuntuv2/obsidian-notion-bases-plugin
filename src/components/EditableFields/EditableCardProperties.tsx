@@ -4,7 +4,9 @@ import { ColumnSchema, NoteRow } from '../../types'
 import { stringifyScalar } from '../../value-utils'
 import EditableDate from './EditableDate'
 import EditableSelector from './EditableSelector'
-import { CreateSelectorOptionHandler, RenameSelectorOptionHandler } from '../../hooks/useSelectorOptionRename'
+import {
+	ColorSelectorOptionHandler, CreateSelectorOptionHandler, DeleteSelectorOptionHandler, RenameSelectorOptionHandler,
+} from '../../hooks/useSelectorOptionRename'
 
 interface EditableCardPropertiesProps {
 	row: NoteRow
@@ -12,10 +14,12 @@ interface EditableCardPropertiesProps {
 	manager: DatabaseManager
 	onRenameOption: RenameSelectorOptionHandler
 	onCreateOption: CreateSelectorOptionHandler
+	onColorOption: ColorSelectorOptionHandler
+	onDeleteOption: DeleteSelectorOptionHandler
 }
 
 export default function EditableCardProperties({
-	row, columns, manager, onRenameOption, onCreateOption,
+	row, columns, manager, onRenameOption, onCreateOption, onColorOption, onDeleteOption,
 }: EditableCardPropertiesProps) {
 	if (columns.length === 0) return null
 
@@ -30,7 +34,8 @@ export default function EditableCardProperties({
 			if (isSelector) {
 				return <EditableSelector key={column.id} column={column} value={value}
 					file={row._file} manager={manager} inlineFields={row._inlineFields}
-					onRenameOption={onRenameOption} onCreateOption={onCreateOption} />
+					onRenameOption={onRenameOption} onCreateOption={onCreateOption}
+					onColorOption={onColorOption} onDeleteOption={onDeleteOption} />
 			}
 			if (value === null || value === undefined || stringifyScalar(value).trim() === '') return null
 			const display = Array.isArray(value) ? (value as string[]).join(', ') : stringifyScalar(value)

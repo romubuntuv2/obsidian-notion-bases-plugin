@@ -19,7 +19,7 @@ import { TemplatePickerModal } from './template-picker-modal'
 import { formatTimestampLocal, isRecord, stringifyScalar } from './value-utils'
 import { readVirtualProperty, resolveEffectiveSchema } from './virtual-properties'
 import {
-	appendSelectorOption, renameSelectorOption, resolveAttachedSharedProperties, resolveRenamedOptionValue, resolveSharedOptionRemovalValue, sharedDefinitionToColumn,
+	appendSelectorOption, recolorSelectorOption, renameSelectorOption, resolveAttachedSharedProperties, resolveRenamedOptionValue, resolveSharedOptionRemovalValue, sharedDefinitionToColumn,
 	sharedDefinitionToLocalColumn, sharedValueContainsOption, SHARED_PROPERTIES_REGISTRY_PATH,
 	SharedOptionRemovalMode, SharedPropertyRegistryStore,
 } from './shared-properties'
@@ -261,6 +261,19 @@ export class DatabaseManager {
 		})
 	}
 
+	async recolorSharedOption(
+		sharedPropertyId: string,
+		optionValue: string,
+		color: string,
+		currentOptions?: SelectOption[],
+	): Promise<void> {
+		const definition = this.getSharedPropertyDefinition(sharedPropertyId)
+		await this.sharedProperties.update({
+			...definition,
+			options: recolorSelectorOption(currentOptions ?? definition.options, optionValue, color),
+		})
+	}
+
 	async addDatabaseOption(
 		dbFile: TFile,
 		config: DatabaseConfig,
@@ -279,6 +292,80 @@ export class DatabaseManager {
 				: candidate),
 		}
 		await this.writeConfig(dbFile, nextConfig)
+		return nextConfig
+	}
+
+	async recolorDatabaseOption(
+		dbFile: TFile,
+		config: DatabaseConfig,
+		columnId: string,
+		optionValue: string,
+		color: string,
+		currentOptions?: SelectOption[],
+	): Promise<DatabaseConfig> {
+		const column = config.schema.find(candidate => candidate.id === columnId)
+		if (!column || !['select', 'status', 'multiselect'].includes(column.type)) {
+			throw new Error('missing-selector-column')
+		}
+		const nextConfig: DatabaseConfig = {
+			...config,
+			schema: config.schema.map(candidate => candidate.id === columnId
+				? { ...candidate, options: recolorSelectorOption(currentOptions ?? candidate.options, optionValue, color) }
+				: candidate),
+		}
+		await this.writeConfig(dbFile, nextConfig)
+		return nextConfig
+	}
+
+	async removeDatabaseOption(
+		dbFile: TFile,
+		config: DatabaseConfig,
+		columnId: string,
+		optionValue: string,
+		currentOptions?: SelectOption[],
+	): Promise<DatabaseConfig> {
+		const column = config.schema.find(candidate => candidate.id === columnId)
+		if (!column || !['select', 'status', 'multiselect'].includes(column.type)) {
+			throw new Error('missing-selector-column')
+		}
+		const options = currentOptions ?? column.options
+		if (!options?.some(option => option.value === optionValue)) throw new Error('missing-selector-option')
+		const includeSubfolders = config.views.some(view => !!view.includeSubfolders)
+		const impacts: SharedValueImpact[] = []
+		for (const file of this.getNotesInDatabase(dbFile, includeSubfolders)) {
+			const row = await this.getNoteData(file, [column])
+			const value = row[column.id]
+			if (sharedValueContainsOption(value, optionValue)) {
+				impacts.push({ file, value, inlineFields: row._inlineFields })
+			}
+		}
+		const nextConfig: DatabaseConfig = {
+			...config,
+			schema: config.schema.map(candidate => candidate.id === columnId
+				? { ...candidate, options: options.filter(option => option.value !== optionValue).map(option => ({ ...option })) }
+				: candidate),
+		}
+		const originals = new Map<string, string>()
+		try {
+			for (const impact of impacts) {
+				originals.set(impact.file.path, await this.app.vault.read(impact.file))
+				await this.updateNoteField(
+					impact.file,
+					column.id,
+					resolveSharedOptionRemovalValue(impact.value, optionValue, 'clear'),
+					impact.inlineFields,
+				)
+			}
+			await this.writeConfig(dbFile, nextConfig)
+		} catch (error) {
+			for (const impact of impacts.slice().reverse()) {
+				const content = originals.get(impact.file.path)
+				if (content === undefined) continue
+				try { await this.app.vault.modify(impact.file, content) } catch { /* best-effort rollback */ }
+			}
+			try { await this.writeConfig(dbFile, config) } catch { /* best-effort rollback */ }
+			throw error
+		}
 		return nextConfig
 	}
 

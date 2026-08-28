@@ -3,6 +3,7 @@ import NotionBasesPlugin from './main'
 import { ViewConfig } from './types'
 import { runtimePrefs } from './runtime-prefs'
 import { t } from './i18n'
+import { SharedPropertiesManagerModal } from './shared-properties-manager-modal'
 
 export interface VirtualPropertyMenuVisibility {
 	parentFolder: boolean
@@ -62,6 +63,19 @@ export class NotionBasesSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings()
 					})
 			)
+
+		new Setting(containerEl)
+			.setName(t('shared_manager_title'))
+			.setDesc(t('shared_manager_settings_desc'))
+			.setHeading()
+
+		new Setting(containerEl)
+			.setName(t('shared_manager_settings_name'))
+			.setDesc(t('shared_manager_settings_desc'))
+			.addButton(button => button
+				.setButtonText(t('shared_manager_open'))
+				.setCta()
+				.onClick(() => new SharedPropertiesManagerModal(this.app, this.plugin.manager).open()))
 
 		new Setting(containerEl)
 			.setName(t('settings_virtual_fields_heading'))

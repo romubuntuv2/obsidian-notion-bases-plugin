@@ -5,8 +5,10 @@ import {
 	attachSharedProperty,
 	appendSelectorOption,
 	detachSharedProperty,
+	findMissingSharedPropertyReferences,
 	getSharedPropertyAttachmentError,
 	renameSelectorOption,
+	recolorSelectorOption,
 	resolveRenamedOptionValue,
 	resolveSharedOptionRemovalValue,
 	resolveAttachedSharedProperties,
@@ -62,6 +64,16 @@ describe('shared-property registry model', () => {
 		expect(result.missingReferenceIds).toEqual(['missing'])
 	})
 
+	it('audits missing vault references and deduplicates each database entry', () => {
+		expect(findMissingSharedPropertyReferences(registry(), [
+			{ path: 'Projects/First.md', sharedPropertyIds: [sharedType.id, 'missing', 'missing'] },
+			{ path: 'Projects/Second.md', sharedPropertyIds: ['other-missing'] },
+		])).toEqual([
+			{ databasePath: 'Projects/First.md', sharedPropertyId: 'missing' },
+			{ databasePath: 'Projects/Second.md', sharedPropertyId: 'other-missing' },
+		])
+	})
+
 	it('blocks local storage-key collisions without mutating the database', () => {
 		const database = config({
 			schema: [{ id: 'type', name: 'Local type', type: 'text', visible: true }],
@@ -115,6 +127,13 @@ describe('shared-property destructive migrations', () => {
 			{ value: 'Event', color: '#00f' },
 		])
 		expect(() => appendSelectorOption(sharedType.options, { value: 'Todo' })).toThrow('duplicate-selector-option')
+	})
+
+	it('recolors one option without mutating names or order', () => {
+		expect(recolorSelectorOption(sharedType.options, 'Todo', '#123456')).toEqual([
+			{ value: 'Todo', color: '#123456' },
+			{ value: 'Post', color: '#0f0' },
+		])
 	})
 
 	it('renames an option without losing its color or position', () => {

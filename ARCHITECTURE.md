@@ -277,6 +277,7 @@ Reusable inline editors live in `src/components/EditableFields/`.
 | `EditableSelector.tsx` | Fixed-position option menu and persistence for `select`, `status`, and `multiselect` fields. |
 | `RenamableSelectorOption.tsx` | Shared click/double-click arbitration and inline option-name editor used by Table, Board, and Calendar. |
 | `SelectorOptionCreateInput.tsx` | Shared creation input, keyboard behavior, busy state, and draft preservation for Table and card selector menus. |
+| `SelectorOptionColorPicker.tsx` | Popout-safe shared color palette/custom picker used by card selector menus with the same visual contract as Table. |
 | `EditableDate.tsx` | Compact French date display, native date-picker activation, and date persistence. |
 
 `EditableSelector` receives the `ColumnSchema`, current value, target `TFile`, manager,
@@ -306,8 +307,11 @@ The same component is used by the Table `select`, `status`, and `multiselect` dr
 `SelectorOptionCreateInput` is likewise shared by all three Table dropdown variants and
 `EditableSelector`. Creation is routed by scope: local definitions update only the current
 database schema, while shared definitions update the canonical registry. Card creation
-also assigns the new value immediately. Recoloring and deletion retain their existing
-Table/settings workflows.
+also assigns the new value immediately. Card option rows expose `SelectorOptionColorPicker`
+and delete controls. Color mutations route to the local schema or shared registry. Shared
+deletion opens `SharedOptionDeleteModal`; local deletion scans the current database, clears
+scalar/multiselect occurrences, writes the reduced option catalog, and restores note/config
+snapshots on failure.
 
 `EditableDate` is integrated into Board cards and every Calendar card variant for
 visible non-system date columns. It
@@ -553,14 +557,33 @@ attachment blocks conflicts before persistence. Board grouping, Calendar/Timelin
 selection, Fields menus, Quick Add, charts, filters, sorts, formatting, formula evaluation,
 lookups, and rollups receive effective shared definitions where their types apply.
 
-The agreed usable scope is complete, including deletion and rename migrations. Optional
-follow-up work is limited to a standalone vault-wide registry-management screen for
-unattached definitions.
+### Vault-wide registry management
+
+`SharedPropertiesManagerModal` provides a standalone registry view from the plugin
+settings. It reads every canonical definition and database configuration, then presents
+each property's type, immutable storage key, option catalog, referencing databases, and
+number of owned notes that currently contain a value. Referencing database buttons open
+the corresponding database directly.
+
+Creation and editing reuse `SharedPropertyEditorModal`. Unattached definitions may remove
+options directly because no database values can depend on them; once a definition is
+attached, removal remains blocked in the generic editor and must use the impact-aware
+selector workflow. Whole-property deletion always delegates to
+`SharedPropertyDeleteModal`, retaining the lossless conversion and rollback contract.
+
+The registry manager also audits `sharedPropertyIds` against the canonical registry.
+Missing IDs are displayed as broken references and can be removed from the affected
+database configuration without touching its schema or note values. The pure
+`findMissingSharedPropertyReferences` helper deduplicates and reports these references for
+both the UI and automated tests.
+
+The agreed usable scope is complete, including deletion and rename migrations and
+standalone administration of attached or unattached definitions.
 
 ## 15. Verification
 
 TypeScript and the production bundle pass through `npm run build`. The full lint command
-has 0 errors (5 unrelated pre-existing warnings). All 10 test files and 218 tests pass,
+has 0 errors (5 unrelated pre-existing warnings). All 10 test files and 220 tests pass,
 including dedicated Shared Properties registry, collision, attachment, composition,
 propagation, destructive value migration, and local-conversion coverage.
 
@@ -596,6 +619,12 @@ propagation, destructive value migration, and local-conversion coverage.
 - Extracted one shared option-creation input for Table and card menus, then enabled
   immediate local/shared option creation and selection from every Board/Calendar selector;
   the suite now has 218 passing tests.
+- Added card-level color and deletion parity through `SelectorOptionColorPicker`, canonical
+  shared recoloring, the existing shared impact modal, and rollback-safe local cleanup;
+  the suite now has 219 passing tests.
+- Added the settings-level `SharedPropertiesManagerModal` for vault-wide creation,
+  editing, usage auditing, safe deletion, database navigation, and stale-reference cleanup;
+  added missing-reference audit coverage and reached 220 passing tests.
 
 ### 2026-08-27
 

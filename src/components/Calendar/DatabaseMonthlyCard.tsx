@@ -7,7 +7,9 @@ import EditableTitle from '../EditableFields/EditableTitle'
 import EditableCardProperties from '../EditableFields/EditableCardProperties'
 import { getRowTime } from './calendar-utils'
 import { CardContextMenuHandler, CardDragHandler } from './calendar-types'
-import { CreateSelectorOptionHandler, RenameSelectorOptionHandler } from '../../hooks/useSelectorOptionRename'
+import {
+	ColorSelectorOptionHandler, CreateSelectorOptionHandler, DeleteSelectorOptionHandler, RenameSelectorOptionHandler,
+} from '../../hooks/useSelectorOptionRename'
 
 interface DatabaseMonthlyCardProps {
 	row: NoteRow
@@ -21,10 +23,13 @@ interface DatabaseMonthlyCardProps {
 	onContextMenu: CardContextMenuHandler
 	onRenameOption: RenameSelectorOptionHandler
 	onCreateOption: CreateSelectorOptionHandler
+	onColorOption: ColorSelectorOptionHandler
+	onDeleteOption: DeleteSelectorOptionHandler
 }
 
 export function DatabaseMonthlyCard({ row, manager, activeView, dateField, schema,
-	visibleColumns, onOpenFile, onCardDragStart, onContextMenu, onRenameOption, onCreateOption }: DatabaseMonthlyCardProps) {
+	visibleColumns, onOpenFile, onCardDragStart, onContextMenu, onRenameOption, onCreateOption,
+	onColorOption, onDeleteOption }: DatabaseMonthlyCardProps) {
 	const cardStyle = activeView.conditionalFormats?.length
 		? getCardConditionalStyle(row, activeView.conditionalFormats, schema) : undefined
 
@@ -37,6 +42,7 @@ export function DatabaseMonthlyCard({ row, manager, activeView, dateField, schem
 			<EditableTitle title={row._title} file={row._file} manager={manager} onOpen={onOpenFile} className="nb-cal-card-title" />
 		</div>
 		<EditableCardProperties row={row} columns={visibleColumns} manager={manager}
-			onRenameOption={onRenameOption} onCreateOption={onCreateOption} />
+			onRenameOption={onRenameOption} onCreateOption={onCreateOption}
+			onColorOption={onColorOption} onDeleteOption={onDeleteOption} />
 	</div>
 }

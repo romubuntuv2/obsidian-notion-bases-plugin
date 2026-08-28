@@ -1813,6 +1813,78 @@
 	font: inherit;
 }
 
+.nb-shared-manager {
+	width: min(760px, calc(100vw - 48px));
+}
+
+.nb-shared-manager-header,
+.nb-shared-manager-card-heading,
+.nb-shared-manager-broken-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.nb-shared-manager-header h2 {
+	margin: 0;
+}
+
+.nb-shared-manager-list {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	margin-top: 14px;
+}
+
+.nb-shared-manager-card,
+.nb-shared-manager-broken {
+	padding: 12px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background: var(--background-secondary);
+}
+
+.nb-shared-manager-broken {
+	margin-top: 12px;
+	border-color: var(--text-warning);
+}
+
+.nb-shared-manager-identity {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+
+.nb-shared-manager-actions,
+.nb-shared-manager-options,
+.nb-shared-manager-databases {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.nb-shared-manager-usage {
+	margin: 8px 0;
+	color: var(--text-muted);
+}
+
+.nb-shared-manager-options {
+	margin-bottom: 8px;
+}
+
+.nb-shared-manager-database {
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.nb-shared-manager-broken-row + .nb-shared-manager-broken-row {
+	margin-top: 8px;
+}
+
 .nb-select-clear {
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);

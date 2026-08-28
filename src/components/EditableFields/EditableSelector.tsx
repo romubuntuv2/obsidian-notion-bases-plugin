@@ -4,9 +4,12 @@ import { Notice, TFile } from 'obsidian'
 import { DatabaseManager } from '../../database-manager'
 import { ColumnSchema, InlineFieldMeta, SelectOption } from '../../types'
 import { t } from '../../i18n'
-import { CreateSelectorOptionHandler, RenameSelectorOptionHandler } from '../../hooks/useSelectorOptionRename'
+import {
+	ColorSelectorOptionHandler, CreateSelectorOptionHandler, DeleteSelectorOptionHandler, RenameSelectorOptionHandler,
+} from '../../hooks/useSelectorOptionRename'
 import { RenamableSelectorOption } from './RenamableSelectorOption'
 import { SelectorOptionCreateInput } from './SelectorOptionCreateInput'
+import { SelectorOptionColorPicker } from './SelectorOptionColorPicker'
 
 interface EditableSelectorProps {
 	column: ColumnSchema
@@ -16,6 +19,8 @@ interface EditableSelectorProps {
 	inlineFields?: Record<string, InlineFieldMeta>
 	onRenameOption: RenameSelectorOptionHandler
 	onCreateOption: CreateSelectorOptionHandler
+	onColorOption: ColorSelectorOptionHandler
+	onDeleteOption: DeleteSelectorOptionHandler
 }
 
 const defaultStatusOptions = (): SelectOption[] => [
@@ -34,18 +39,22 @@ function textColor(background?: string): string | undefined {
 }
 
 export default function EditableSelector({
-	column, value, file, manager, inlineFields, onRenameOption, onCreateOption,
+	column, value, file, manager, inlineFields, onRenameOption, onCreateOption, onColorOption, onDeleteOption,
 }: EditableSelectorProps) {
 	const [open, setOpen] = useState(false)
 	const [localValue, setLocalValue] = useState<unknown>(value)
 	const [saving, setSaving] = useState(false)
+	const [localColors, setLocalColors] = useState<Record<string, string>>({})
 	const anchorRef = useRef<HTMLButtonElement>(null)
 	const dropdownRef = useRef<HTMLDivElement>(null)
 	const [position, setPosition] = useState({ top: 0, left: 0, width: 180 })
 	const isMulti = column.type === 'multiselect'
-	const options = useMemo(() => column.options?.length
+	const baseOptions = useMemo(() => column.options?.length
 		? column.options
 		: column.type === 'status' ? defaultStatusOptions() : [], [column.options, column.type])
+	const options = useMemo(() => baseOptions.map(option => localColors[option.value]
+		? { ...option, color: localColors[option.value] }
+		: option), [baseOptions, localColors])
 	const selected = isMulti
 		? (Array.isArray(localValue) ? localValue.filter((item): item is string => typeof item === 'string') : [])
 		: (typeof localValue === 'string' ? [localValue] : [])
@@ -99,6 +108,28 @@ export default function EditableSelector({
 		}
 	}
 
+	const changeColor = async (optionValue: string, color: string) => {
+		const previousColor = options.find(option => option.value === optionValue)?.color
+		setLocalColors(current => ({ ...current, [optionValue]: color }))
+		try {
+			await onColorOption(column, optionValue, color, options)
+		} catch {
+			setLocalColors(current => ({ ...current, [optionValue]: previousColor ?? '#9E9E9E' }))
+		}
+	}
+
+	const deleteOption = async (optionValue: string) => {
+		try {
+			await onDeleteOption(column, optionValue, options)
+			if (column.propertyScope !== 'shared' && selected.includes(optionValue)) {
+				setLocalValue(isMulti ? selected.filter(item => item !== optionValue) : null)
+			}
+			setOpen(false)
+		} catch {
+			// The shared action hook owns the user-facing error message.
+		}
+	}
+
 	const renderBadge = (optionValue: string) => {
 		const option = options.find(item => item.value === optionValue)
 		return <span key={optionValue} className="nb-select-badge"
@@ -113,16 +144,23 @@ export default function EditableSelector({
 				onCreate={createOption} onCancel={() => setOpen(false)} />
 			<button className="nb-select-option nb-select-clear" disabled={saving}
 				onClick={() => { void save(isMulti ? [] : null, !isMulti) }}>{t('select_clear')}</button>
-			{options.map(option => <RenamableSelectorOption key={option.value}
-				className={`nb-select-option${selected.includes(option.value) ? ' nb-select-option--active' : ''}`}
-				value={option.value} disabled={saving} onSelect={() => selectOption(option.value)}
-				onRename={async newValue => {
-					await onRenameOption(column, option.value, newValue, options)
-					setOpen(false)
-				}}>
-				{renderBadge(option.value)}
-				{selected.includes(option.value) && <span aria-hidden="true"> ✓</span>}
-			</RenamableSelectorOption>)}
+			{options.map(option => <div key={option.value}
+				className={`nb-select-option-row${selected.includes(option.value) ? ' nb-select-option-row--active' : ''}`}>
+				<RenamableSelectorOption
+					className={`nb-select-option${selected.includes(option.value) ? ' nb-select-option--active' : ''}`}
+					value={option.value} disabled={saving} onSelect={() => selectOption(option.value)}
+					onRename={async newValue => {
+						await onRenameOption(column, option.value, newValue, options)
+						setOpen(false)
+					}}>
+					{renderBadge(option.value)}
+					{selected.includes(option.value) && <span aria-hidden="true"> ✓</span>}
+				</RenamableSelectorOption>
+				<SelectorOptionColorPicker color={option.color ?? '#9E9E9E'}
+					onChange={color => changeColor(option.value, color)} />
+				<button className="nb-select-option-delete" title={t('select_clear')}
+					onClick={event => { event.stopPropagation(); void deleteOption(option.value) }}>×</button>
+			</div>)}
 			{options.length === 0 && <div className="nb-select-option nb-editable-selector-empty">—</div>}
 		</div>, activeDocument.body
 	) : null

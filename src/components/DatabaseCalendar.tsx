@@ -28,7 +28,9 @@ import {
 	getFieldMenuColumns, getPropertyCapabilities, getPropertyIcon, getViewPropertyColumns, getVisibleViewProperties,
 	isPropertyVisibleInView, toggleViewProperty,
 } from '../virtual-properties'
-import { useSelectorOptionCreate, useSelectorOptionRename } from '../hooks/useSelectorOptionRename'
+import {
+	useSelectorOptionColor, useSelectorOptionCreate, useSelectorOptionDelete, useSelectorOptionRename,
+} from '../hooks/useSelectorOptionRename'
 
 interface DatabaseCalendarProps {
 	dbFile: TFile | null
@@ -325,6 +327,8 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 	const reloadAfterOptionRename = useCallback(() => { void reload() }, [reload])
 	const renameSelectorOption = useSelectorOptionRename({ manager, dbFile, config, onComplete: reloadAfterOptionRename })
 	const createSelectorOption = useSelectorOptionCreate({ manager, dbFile, config })
+	const colorSelectorOption = useSelectorOptionColor({ manager, dbFile, config })
+	const deleteSelectorOption = useSelectorOptionDelete({ app, manager, dbFile, config, onComplete: reloadAfterOptionRename })
 
 	if (!dbFile) return <div className="nb-empty-state"><p>{t('no_database_open')}</p></div>
 	if (loading) return <div className="nb-loading">{t('loading')}</div>
@@ -495,7 +499,8 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 							onDayDragOver={handleDayDragOver} onDayDragLeave={handleDayDragLeave}
 							onDayDrop={handleDayDrop} onOpenRow={row => openFile(row._file)}
 							onCardContextMenu={handleCardContextMenu} onRenameOption={renameSelectorOption}
-							onCreateOption={createSelectorOption} />
+							onCreateOption={createSelectorOption} onColorOption={colorSelectorOption}
+							onDeleteOption={deleteSelectorOption} />
 						: <DatabaseMonthView calendarCells={calendarCells} cellProps={{
 							currentYear, currentMonth, todayDay, dragOverDay, rowsByDate,
 							manager, activeView, dateField, schema: effectiveSchema, visibleColumns: visibleCols,
@@ -503,13 +508,16 @@ export function DatabaseCalendar({ dbFile, manager, externalView, onViewChange }
 							onCardContextMenu: handleCardContextMenu,
 							onRenameOption: renameSelectorOption,
 							onCreateOption: createSelectorOption,
+							onColorOption: colorSelectorOption,
+							onDeleteOption: deleteSelectorOption,
 							onDayDragOver: handleDayDragOver, onDayDragLeave: handleDayDragLeave, onDayDrop: handleDayDrop,
 						}} />
 					}
 					{noDateRows.length > 0 && <DatabaseNoDateRows rows={noDateRows}
 						manager={manager} visibleColumns={compactCardColumns} onOpenFile={openFile}
 						onCardDragStart={handleCardDragStart} onCardContextMenu={handleCardContextMenu}
-						onRenameOption={renameSelectorOption} onCreateOption={createSelectorOption} />}
+						onRenameOption={renameSelectorOption} onCreateOption={createSelectorOption}
+						onColorOption={colorSelectorOption} onDeleteOption={deleteSelectorOption} />}
 				</div>
 			)}
 		</div>

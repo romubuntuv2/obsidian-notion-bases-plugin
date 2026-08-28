@@ -9,7 +9,9 @@ import {
 	CardContextMenuHandler, CardDragHandler, DayClickHandler, DayDragLeaveHandler, DayDragOverHandler,
 	DayDropHandler, RowsByDate,
 } from './calendar-types'
-import { CreateSelectorOptionHandler, RenameSelectorOptionHandler } from '../../hooks/useSelectorOptionRename'
+import {
+	ColorSelectorOptionHandler, CreateSelectorOptionHandler, DeleteSelectorOptionHandler, RenameSelectorOptionHandler,
+} from '../../hooks/useSelectorOptionRename'
 
 interface DatabaseWeekViewProps {
 	dateField: ColumnSchema
@@ -29,12 +31,14 @@ interface DatabaseWeekViewProps {
 	onCardContextMenu: CardContextMenuHandler
 	onRenameOption: RenameSelectorOptionHandler
 	onCreateOption: CreateSelectorOptionHandler
+	onColorOption: ColorSelectorOptionHandler
+	onDeleteOption: DeleteSelectorOptionHandler
 }
 
 export function DatabaseWeekView({
 	dateField, visibleColumns, manager, weekDays, rowsByDate, today, nowMinutes, bodyRef, onDayClick,
 	onCardDragStart, onDayDragOver, onDayDragLeave, onDayDrop, onOpenRow, onCardContextMenu,
-	onRenameOption, onCreateOption,
+	onRenameOption, onCreateOption, onColorOption, onDeleteOption,
 }: DatabaseWeekViewProps) {
 	const isToday = (date: Date) => date.getFullYear() === today.getFullYear()
 		&& date.getMonth() === today.getMonth() && date.getDate() === today.getDate()
@@ -60,7 +64,8 @@ export function DatabaseWeekView({
 						onClick={event => { event.stopPropagation(); onOpenRow(row) }}>
 						<EditableTitle title={row._title} file={row._file} manager={manager} onOpen={() => onOpenRow(row)} className="nb-cal-card-title" />
 						<EditableCardProperties row={row} columns={visibleColumns} manager={manager}
-							onRenameOption={onRenameOption} onCreateOption={onCreateOption} />
+							onRenameOption={onRenameOption} onCreateOption={onCreateOption}
+							onColorOption={onColorOption} onDeleteOption={onDeleteOption} />
 					</div>)}
 				</div>
 			})}
@@ -98,7 +103,8 @@ export function DatabaseWeekView({
 							style={{ top: `${((parsed.hour * 60 + parsed.minute) / 1440) * 100}%` }}>
 							<div className="nb-cal-card-title-row"><span className="nb-cal-time-badge">{formatTime(parsed.hour, parsed.minute)}</span><EditableTitle title={row._title} file={row._file} manager={manager} onOpen={() => onOpenRow(row)} className="nb-cal-card-title" /></div>
 							<EditableCardProperties row={row} columns={visibleColumns} manager={manager}
-								onRenameOption={onRenameOption} onCreateOption={onCreateOption} />
+								onRenameOption={onRenameOption} onCreateOption={onCreateOption}
+								onColorOption={onColorOption} onDeleteOption={onDeleteOption} />
 						</div>
 					})}
 				</div>

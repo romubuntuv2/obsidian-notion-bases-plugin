@@ -14,7 +14,9 @@ import { BoardToolbar } from './Board/BoardToolbar'
 import { BoardColumnData, DRAG_TYPE_CARD } from './Board/board-types'
 import { showNoteContextMenu } from './ContextMenu/showNoteContextMenu'
 import { getFieldMenuColumns, getViewPropertyColumns, getVisibleViewProperties, toggleViewProperty } from '../virtual-properties'
-import { useSelectorOptionCreate, useSelectorOptionRename } from '../hooks/useSelectorOptionRename'
+import {
+	useSelectorOptionColor, useSelectorOptionCreate, useSelectorOptionDelete, useSelectorOptionRename,
+} from '../hooks/useSelectorOptionRename'
 
 interface DatabaseBoardProps {
 	dbFile: TFile | null
@@ -152,6 +154,8 @@ export function DatabaseBoard({ dbFile, manager, externalView, onViewChange }: D
 	const reloadAfterOptionRename = useCallback(() => { void reload() }, [reload])
 	const renameSelectorOption = useSelectorOptionRename({ manager, dbFile, config, onComplete: reloadAfterOptionRename })
 	const createSelectorOption = useSelectorOptionCreate({ manager, dbFile, config })
+	const colorSelectorOption = useSelectorOptionColor({ manager, dbFile, config })
+	const deleteSelectorOption = useSelectorOptionDelete({ app, manager, dbFile, config, onComplete: reloadAfterOptionRename })
 
 	if (!dbFile) return <div className="nb-empty-state"><p>{t('no_database_open')}</p></div>
 	if (loading) return <div className="nb-loading">{t('loading')}</div>
@@ -174,7 +178,8 @@ export function DatabaseBoard({ dbFile, manager, externalView, onViewChange }: D
 				onSaveView={saveView} onMoveCard={moveCard} onMoveColumn={moveColumn}
 				onAddCard={addCardToColumn} onOpenFile={openFile} onCardDragStart={handleCardDragStart}
 				onCardContextMenu={handleCardContextMenu} onRenameOption={renameSelectorOption}
-				onCreateOption={createSelectorOption} />)}
+				onCreateOption={createSelectorOption} onColorOption={colorSelectorOption}
+				onDeleteOption={deleteSelectorOption} />)}
 		</div>
 	</div>
 }
